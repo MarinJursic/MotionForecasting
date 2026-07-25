@@ -25,6 +25,7 @@ test("server-renders the motion forecasting laboratory shell", async () => {
   assert.match(html, /Occluded crosswalk emergence/);
   assert.match(html, /RUN COUNTERFACTUAL/);
   assert.match(html, /Switch to light theme/);
+  assert.match(html, /REAL STREET VIDEO/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/);
 });
 
@@ -43,6 +44,8 @@ test("ships scenario layers, time controls, evidence metrics, and both themes", 
   assert.match(client, /RERUN 128 SAMPLES/);
   assert.match(client, /fetchCounterfactual/);
   assert.match(client, /counterfactual_forecast/);
+  assert.match(client, /Special:Redirect\/file\/Street%20traffic\.webm/);
+  assert.match(client, /Context footage only · not model input or tracking evidence/);
   assert.match(client, /expected_calibration_error|Graph diffusion|ECE/);
   assert.match(scene, /OrbitControls/);
   assert.match(scene, /TubeGeometry/);

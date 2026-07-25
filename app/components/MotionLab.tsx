@@ -58,6 +58,7 @@ export function MotionLab() {
   const [metrics, setMetrics] = useState<CalibrationMetric[]>(localCalibrationMetrics);
   const [apiStatus, setApiStatus] = useState<"checking" | "connected" | "local">("checking");
   const [toast, setToast] = useState("");
+  const [showStreetReference, setShowStreetReference] = useState(false);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("vector-field-theme");
@@ -168,6 +169,14 @@ export function MotionLab() {
             <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
             {theme === "dark" ? "LIGHT" : "DARK"}
           </button>
+          <button
+            className={`reference-toggle ${showStreetReference ? "active" : ""}`}
+            type="button"
+            onClick={() => setShowStreetReference((shown) => !shown)}
+            aria-pressed={showStreetReference}
+          >
+            {showStreetReference ? "ANALYTIC TWIN" : "REAL STREET VIDEO"}
+          </button>
           <a href="https://github.com/waymo-research/waymo-open-dataset" target="_blank" rel="noreferrer">DATA ADAPTER ↗</a>
         </div>
       </header>
@@ -208,32 +217,59 @@ export function MotionLab() {
         </aside>
 
         <section className="viewport-panel">
-          <SceneCanvas
-            time={time}
-            obstruction={obstruction}
-            layers={layers}
-            forecasts={forecast.forecasts}
-            risk={risk}
-            selectedActor={selectedActor}
-            onSelectActor={setSelectedActor}
-            theme={theme}
-          />
-          <div className="view-badge">BIRD’S-EYE · 42 M AGL</div>
-          <div className="scene-title">
-            <span>INTERSECTION 04 / NORTHBOUND</span>
-            <strong>Occluded crosswalk emergence</strong>
+          <div className={`analytic-scene ${showStreetReference ? "hidden" : ""}`}>
+            <SceneCanvas
+              time={time}
+              obstruction={obstruction}
+              layers={layers}
+              forecasts={forecast.forecasts}
+              risk={risk}
+              selectedActor={selectedActor}
+              onSelectActor={setSelectedActor}
+              theme={theme}
+            />
           </div>
-          <div className="model-chip">
+          <div className={`street-reference ${showStreetReference ? "visible" : ""}`} aria-hidden={!showStreetReference}>
+            {showStreetReference && (
+              <video autoPlay muted loop playsInline preload="metadata">
+                <source
+                  src="https://commons.wikimedia.org/wiki/Special:Redirect/file/Street%20traffic.webm"
+                  type="video/webm"
+                />
+              </video>
+            )}
+            <div className="reference-shade" />
+            <div className="reference-caption">
+              <span>REAL-WORLD VISUAL REFERENCE</span>
+              <strong>Market Street · San Francisco</strong>
+              <small>Context footage only · not model input or tracking evidence</small>
+              <a
+                href="https://commons.wikimedia.org/wiki/File:Street_traffic.webm"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Editor · CC BY 3.0 ↗
+              </a>
+            </div>
+          </div>
+          <div className="view-badge">
+            {showStreetReference ? "REFERENCE FOOTAGE · 1920 × 1080" : "BIRD’S-EYE ANALYTIC TWIN · 42 M AGL"}
+          </div>
+          <div className="scene-title">
+            <span>{showStreetReference ? "REAL STREET CONTEXT" : "INTERSECTION 04 / NORTHBOUND"}</span>
+            <strong>{showStreetReference ? "Observed traffic · no synthetic actors" : "Occluded crosswalk emergence"}</strong>
+          </div>
+          {!showStreetReference && <div className="model-chip">
             <i />
             <span><small>ACTIVE MODEL · {forecast.sample_count} SAMPLES</small><strong>{modelLabel(forecast.model).toUpperCase()}</strong></span>
             <em>{forecast.latency_ms ? `${forecast.latency_ms}ms` : "local"}</em>
-          </div>
-          <div className="risk-callout">
+          </div>}
+          {!showStreetReference && <div className="risk-callout">
             <span className="crosshair" />
             <div><small>PEDESTRIAN CONFLICT</small><strong>{Math.round(risk.collision_probability * 100)}% risk</strong><em>TTC {risk.expected_ttc_s.toFixed(1)}s</em></div>
-          </div>
-          <div className="orientation"><span>N</span><i /><small>ORBIT ENABLED</small></div>
-          <div className="timeline">
+          </div>}
+          {!showStreetReference && <div className="orientation"><span>N</span><i /><small>ORBIT ENABLED</small></div>}
+          {!showStreetReference && <div className="timeline">
             <button onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pause replay" : "Play replay"}>{playing ? "Ⅱ" : "▶"}</button>
             <span className="timecode">00:{time.toFixed(1).padStart(4, "0")}</span>
             <input
@@ -248,7 +284,7 @@ export function MotionLab() {
             {[0.5, 1, 2].map((item) => (
               <button key={item} className={speed === item ? "active" : ""} aria-pressed={speed === item} onClick={() => setSpeed(item)}>{item}×</button>
             ))}
-          </div>
+          </div>}
         </section>
 
         <aside className="right-rail panel">
