@@ -26,7 +26,7 @@ test("server-renders the motion forecasting laboratory shell", async () => {
   assert.match(html, /RUN COUNTERFACTUAL/);
   assert.match(html, /Switch to light theme/);
   assert.match(html, /REAL STREET VIDEO/);
-  assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/);
+  assert.doesNotMatch(html, /starter-preview|react-loading-skeleton|Your site is taking shape/);
 });
 
 test("ships scenario layers, time controls, evidence metrics, and both themes", async () => {
