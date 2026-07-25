@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
   basePath: pagesBasePath,
   trailingSlash: process.env.GITHUB_PAGES === "true",
   images: { unoptimized: process.env.GITHUB_PAGES === "true" },
+  env: { NEXT_PUBLIC_BASE_PATH: pagesBasePath },
 };
 
 export default nextConfig;
