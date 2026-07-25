@@ -8,6 +8,8 @@ import {
   fetchCounterfactual,
   fetchForecast,
   fetchMetrics,
+  FORECAST_ANCHOR_S,
+  replayActorPositions,
 } from "../app/lib/motion-domain.ts";
 
 test("local forecast is deterministic, normalized, multimodal, and horizon-complete", () => {
@@ -25,6 +27,16 @@ test("local forecast is deterministic, normalized, multimodal, and horizon-compl
       assert.ok(mode.covariance_trace.at(-1) > mode.covariance_trace[0]);
     }
   }
+  assert.deepEqual(
+    first.forecasts.flatMap((actor) => actor.modes.map((mode) => Number(mode.probability.toFixed(6)))),
+    [
+      0.625954, 0.251908, 0.122137,
+      0.664122, 0.236641, 0.099237,
+      0.618321, 0.267176, 0.114504,
+      0.679389, 0.251908, 0.068702,
+    ],
+    "seed 42 allocation matches the Python API contract",
+  );
 });
 
 test("local obstruction intervention reruns probabilities and risk", () => {
@@ -39,6 +51,31 @@ test("local obstruction intervention reruns probabilities and risk", () => {
     present.counterfactual_forecast.forecasts.find((actor) => actor.actor_id === "ped-04").modes,
     removed.counterfactual_forecast.forecasts.find((actor) => actor.actor_id === "ped-04").modes,
   );
+});
+
+test("replay actors meet every future tube at the shared ENU forecast anchor", () => {
+  const forecast = createLocalForecast("present");
+  const anchored = replayActorPositions(FORECAST_ANCHOR_S);
+  for (const actor of forecast.forecasts) {
+    for (const mode of actor.modes) {
+      assert.deepEqual(
+        [mode.points[0].x, mode.points[0].y],
+        [...anchored[actor.actor_id]],
+      );
+    }
+  }
+
+  const before = replayActorPositions(FORECAST_ANCHOR_S - 1);
+  assert.equal(before["ego-01"][1], anchored["ego-01"][1] - 9.8);
+  assert.equal(before["veh-27"][0], anchored["veh-27"][0] - 7.1);
+  const egoArrival = (14 - anchored["ego-01"][1]) / 9.8;
+  const pedestrianArrival = (
+    anchored["ego-01"][0] - anchored["ped-04"][0]
+  ) / -1.4;
+  assert.ok(Math.abs(egoArrival - pedestrianArrival) < 0.25);
+  const realized = replayActorPositions(FORECAST_ANCHOR_S + 3);
+  assert.ok(Math.abs(realized["ego-01"][1] - (anchored["ego-01"][1] + 9.8 * 3)) < 1e-9);
+  assert.ok(Math.abs(realized["ped-04"][0] - (anchored["ped-04"][0] - 1.4 * 3)) < 1e-9);
 });
 
 test("forecast client sends the complete typed intervention request", async () => {

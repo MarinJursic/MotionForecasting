@@ -42,6 +42,64 @@ def test_forecast_is_deterministic_and_normalized() -> None:
     assert first.json()["sample_count"] == 128
 
 
+def test_forecast_tubes_share_scenario_actor_anchors() -> None:
+    scenario = client.get("/api/scenarios/sf-market-0142").json()
+    actor_positions = {
+        actor["id"]: tuple(actor["position"]) for actor in scenario["actors"]
+    }
+    result = client.post(
+        "/api/forecast",
+        json={"scenario_id": "sf-market-0142", "obstruction": "present"},
+    ).json()
+    for actor in result["forecasts"]:
+        for mode in actor["modes"]:
+            first = mode["points"][0]
+            assert (first["x"], first["y"]) == actor_positions[actor["actor_id"]]
+
+
+def test_builtin_map_geometry_supports_the_occlusion_story() -> None:
+    scenario = builtin_scenario()
+    features = {feature.id: feature for feature in scenario.map_features}
+    assert features["crosswalk-n"].points == [(-9.0, 14.0), (9.0, 14.0)]
+    assert features["stop-nb"].points == [(-10.0, 9.0), (0.0, 9.0)]
+    assert features["signal-n"].state == "green"
+    assert len(features["van-shadow"].points) == 4
+    pedestrian = next(actor for actor in scenario.actors if actor.id == "ped-04")
+    assert pedestrian.position[1] == features["crosswalk-n"].points[0][1]
+    ego = next(actor for actor in scenario.actors if actor.id == "ego-01")
+    ego_arrival_s = (pedestrian.position[1] - ego.position[1]) / ego.velocity[1]
+    pedestrian_arrival_s = (
+        ego.position[0] - pedestrian.position[0]
+    ) / pedestrian.velocity[0]
+    assert abs(ego_arrival_s - pedestrian_arrival_s) < 0.25
+
+
+def test_python_api_and_browser_fallback_share_seeded_mode_allocation() -> None:
+    result = client.post(
+        "/api/forecast",
+        json={"seed": 42, "samples": 128, "obstruction": "present"},
+    ).json()
+    probabilities = [
+        mode["probability"]
+        for actor in result["forecasts"]
+        for mode in actor["modes"]
+    ]
+    assert probabilities == [
+        0.625954,
+        0.251908,
+        0.122137,
+        0.664122,
+        0.236641,
+        0.099237,
+        0.618321,
+        0.267176,
+        0.114504,
+        0.679389,
+        0.251908,
+        0.068702,
+    ]
+
+
 def test_seed_and_sample_count_drive_mode_sampling() -> None:
     base = {"scenario_id": "sf-market-0142", "samples": 64, "obstruction": "present"}
     first = client.post("/api/forecast", json={**base, "seed": 1}).json()

@@ -24,14 +24,17 @@ test("server-renders the motion forecasting laboratory shell", async () => {
   assert.match(html, /AUTONOMOUS MOTION LAB/);
   assert.match(html, /Occluded crosswalk emergence/);
   assert.match(html, /RUN COUNTERFACTUAL/);
+  assert.match(html, /Switch to light theme/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/);
 });
 
-test("ships scenario layers, time controls, and evidence metrics", async () => {
-  const [page, client, scene, pkg] = await Promise.all([
+test("ships scenario layers, time controls, evidence metrics, and both themes", async () => {
+  const [page, client, scene, css, layout, pkg] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/components/MotionLab.tsx", root), "utf8"),
     readFile(new URL("app/components/SceneCanvas.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+    readFile(new URL("app/layout.tsx", root), "utf8"),
     readFile(new URL("package.json", root), "utf8"),
   ]);
   assert.match(page, /MotionLab/);
@@ -46,6 +49,13 @@ test("ships scenario layers, time controls, and evidence metrics", async () => {
   assert.match(scene, /PointsMaterial/);
   assert.match(scene, /detectionBoxes/);
   assert.match(scene, /ped-04/);
+  assert.match(scene, /replayActorPositions/);
+  assert.match(scene, /background:\s*0xdce8e2/);
+  assert.match(scene, /toneMappingExposure = lightTheme/);
+  assert.match(client, /vector-field-theme/);
+  assert.match(client, /aria-pressed=\{theme === "light"\}/);
+  assert.match(css, /html\[data-theme="light"\]/);
+  assert.match(layout, /prefers-color-scheme: light/);
   assert.match(pkg, /"three"/);
   assert.doesNotMatch(pkg, /react-loading-skeleton/);
 });

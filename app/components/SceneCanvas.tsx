@@ -8,6 +8,7 @@ import type {
   ObstructionMode,
   RiskSummary,
 } from "../lib/motion-domain";
+import { replayActorPositions } from "../lib/motion-domain";
 
 export type LayerState = {
   detections: boolean;
@@ -25,6 +26,7 @@ type SceneCanvasProps = {
   risk: RiskSummary;
   selectedActor: string;
   onSelectActor: (actor: string) => void;
+  theme: "dark" | "light";
 };
 
 const actorColors: Record<string, number> = {
@@ -54,18 +56,32 @@ function line(points: THREE.Vector3[], color: number, opacity = 1, dashed = fals
   return result;
 }
 
-function trajectoryTube(points: THREE.Vector3[], color: number, radius: number, opacity: number) {
-  const curve = new THREE.CatmullRomCurve3(points);
-  return new THREE.Mesh(
-    new THREE.TubeGeometry(curve, 48, radius, 8, false),
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  );
+function trajectoryTube(
+  points: THREE.Vector3[],
+  covarianceTrace: number[],
+  color: number,
+  probability: number,
+) {
+  const tube = new THREE.Group();
+  const opacity = 0.18 + probability * 0.72;
+  points.slice(0, -1).forEach((point, index) => {
+    const nextPoint = points[index + 1];
+    const standardDeviation = Math.sqrt(Math.max(covarianceTrace[index + 1] ?? 0, 0));
+    const radius = 0.055 + probability * 0.13 + Math.min(standardDeviation, 1.5) * 0.055;
+    tube.add(
+      new THREE.Mesh(
+        new THREE.TubeGeometry(new THREE.LineCurve3(point, nextPoint), 4, radius, 8, false),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        }),
+      ),
+    );
+  });
+  return tube;
 }
 
 const actorIdColors: Record<string, number> = {
@@ -85,7 +101,7 @@ function disposeObject(object: THREE.Object3D) {
   });
 }
 
-export function SceneCanvas({ time, obstruction, layers, forecasts, risk, selectedActor, onSelectActor }: SceneCanvasProps) {
+export function SceneCanvas({ time, obstruction, layers, forecasts, risk, selectedActor, onSelectActor, theme }: SceneCanvasProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef({ time, obstruction, layers, forecasts, risk, selectedActor });
   const onSelectRef = useRef(onSelectActor);
@@ -99,9 +115,33 @@ export function SceneCanvas({ time, obstruction, layers, forecasts, risk, select
     const mount = mountRef.current;
     if (!mount) return;
 
+    const lightTheme = theme === "light";
+    const palette = lightTheme
+      ? {
+          background: 0xdce8e2,
+          fog: 0xdce8e2,
+          ground: 0xc8d9d0,
+          road: 0x6e7d78,
+          marking: 0xf7faf8,
+          buildingA: 0xa8bbb2,
+          buildingB: 0xb8c9c1,
+          windows: 0x5f8276,
+          points: 0x176c58,
+        }
+      : {
+          background: 0x07100f,
+          fog: 0x07100f,
+          ground: 0x0b1714,
+          road: 0x182322,
+          marking: 0xaab3aa,
+          buildingA: 0x13231f,
+          buildingB: 0x182824,
+          windows: 0x5c8f83,
+          points: 0x68b8a5,
+        };
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x07100f);
-    scene.fog = new THREE.FogExp2(0x07100f, 0.014);
+    scene.background = new THREE.Color(palette.background);
+    scene.fog = new THREE.FogExp2(palette.fog, lightTheme ? 0.009 : 0.014);
 
     const camera = new THREE.PerspectiveCamera(39, 1, 0.1, 400);
     camera.position.set(29, 34, 36);
@@ -113,7 +153,7 @@ export function SceneCanvas({ time, obstruction, layers, forecasts, risk, select
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.98;
+    renderer.toneMappingExposure = lightTheme ? 1.14 : 0.98;
     mount.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -124,8 +164,12 @@ export function SceneCanvas({ time, obstruction, layers, forecasts, risk, select
     controls.maxPolarAngle = Math.PI * 0.47;
     controls.target.set(0, 0, 0);
 
-    scene.add(new THREE.HemisphereLight(0xa8d8ca, 0x0a1411, 2.1));
-    const sun = new THREE.DirectionalLight(0xffffff, 2.8);
+    scene.add(new THREE.HemisphereLight(
+      lightTheme ? 0xf5fff9 : 0xa8d8ca,
+      lightTheme ? 0x789188 : 0x0a1411,
+      lightTheme ? 2.7 : 2.1,
+    ));
+    const sun = new THREE.DirectionalLight(lightTheme ? 0xfff8df : 0xffffff, lightTheme ? 3.2 : 2.8);
     sun.position.set(-18, 32, 18);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -137,14 +181,14 @@ export function SceneCanvas({ time, obstruction, layers, forecasts, risk, select
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(100, 100),
-      new THREE.MeshStandardMaterial({ color: 0x0b1714, roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: palette.ground, roughness: 1 }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.14;
     ground.receiveShadow = true;
     scene.add(ground);
 
-    const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x182322, roughness: 0.94 });
+    const roadMaterial = new THREE.MeshStandardMaterial({ color: palette.road, roughness: 0.94 });
     const roadA = new THREE.Mesh(new THREE.PlaneGeometry(20, 92), roadMaterial);
     roadA.rotation.x = -Math.PI / 2;
     roadA.position.y = -0.08;
@@ -156,15 +200,15 @@ export function SceneCanvas({ time, obstruction, layers, forecasts, risk, select
 
     const markings = new THREE.Group();
     for (let i = -42; i <= 42; i += 7) {
-      const dashA = roundedBox(0.16, 0.025, 3.2, 0xaab3aa);
+      const dashA = roundedBox(0.16, 0.025, 3.2, palette.marking);
       dashA.position.set(0, 0, i);
       markings.add(dashA);
-      const dashB = roundedBox(3.2, 0.025, 0.16, 0xaab3aa);
+      const dashB = roundedBox(3.2, 0.025, 0.16, palette.marking);
       dashB.position.set(i, 0, 0);
       markings.add(dashB);
     }
     for (let i = -7.5; i <= 7.5; i += 1.5) {
-      const crossing = roundedBox(0.7, 0.03, 5.4, 0xdfe4dc);
+      const crossing = roundedBox(0.7, 0.03, 5.4, palette.marking);
       crossing.position.set(i, 0.02, 14);
       markings.add(crossing);
     }
@@ -193,11 +237,11 @@ export function SceneCanvas({ time, obstruction, layers, forecasts, risk, select
       [-24, 25, 14, 15, 7],
       [26, 26, 18, 13, 10],
     ].forEach(([x, z, w, d, h], index) => {
-      const building = roundedBox(w, h, d, index % 2 ? 0x182824 : 0x13231f);
+      const building = roundedBox(w, h, d, index % 2 ? palette.buildingB : palette.buildingA);
       building.position.set(x, h / 2, z);
       buildings.add(building);
       for (let row = 1.5; row < h - 1; row += 2.6) {
-        const windowStrip = roundedBox(w * 0.72, 0.05, 0.12, 0x5c8f83);
+        const windowStrip = roundedBox(w * 0.72, 0.05, 0.12, palette.windows);
         windowStrip.position.set(x, row, z + d / 2 + 0.07);
         buildings.add(windowStrip);
       }
@@ -289,7 +333,7 @@ export function SceneCanvas({ time, obstruction, layers, forecasts, risk, select
     const sensorPoints = new THREE.Points(
       pointGeometry,
       new THREE.PointsMaterial({
-        color: 0x68b8a5,
+        color: palette.points,
         size: 0.08,
         transparent: true,
         opacity: 0.34,
@@ -325,14 +369,14 @@ export function SceneCanvas({ time, obstruction, layers, forecasts, risk, select
         }),
       );
       disc.rotation.x = -Math.PI / 2;
-      disc.position.set(-4 + i * 0.32, 0.1 + i * 0.002, 12 - i * 0.35);
+      disc.position.set(-5.2 + i * 0.18, 0.1 + i * 0.002, 14 - i * 0.15);
       occupancy.add(disc);
     }
     [
-      [-1, 12, -1, 0],
-      [-4, 10, -0.8, -0.25],
-      [-6, 8, -0.5, -0.55],
-      [-3, 14, -1, 0],
+      [-3.6, 14, -1, 0],
+      [-4.5, 13.2, -0.8, 0.15],
+      [-5.2, 12.3, 0, 1],
+      [-2.7, 14, -1, 0],
     ].forEach(([x, z, dx, dz]) => {
       const arrow = new THREE.ArrowHelper(
         new THREE.Vector3(dx, 0, dz).normalize(),
@@ -346,12 +390,20 @@ export function SceneCanvas({ time, obstruction, layers, forecasts, risk, select
     });
     scene.add(occupancy);
 
+    const occlusionGeometry = new THREE.BufferGeometry();
+    occlusionGeometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute([
+        -3.45, 0.12, 13.65,
+        -0.95, 0.12, 13.65,
+        1.6, 0.12, 28,
+        -2.3, 0.12, 28,
+      ], 3),
+    );
+    occlusionGeometry.setIndex([0, 1, 2, 0, 2, 3]);
+    occlusionGeometry.computeVertexNormals();
     const occlusion = new THREE.Mesh(
-      new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(2, 0.12, 9),
-        new THREE.Vector3(13, 0.12, 5),
-        new THREE.Vector3(13, 0.12, 19),
-      ]),
+      occlusionGeometry,
       new THREE.MeshBasicMaterial({
         color: 0xb38cff,
         transparent: true,
@@ -415,28 +467,31 @@ export function SceneCanvas({ time, obstruction, layers, forecasts, risk, select
               (point) => new THREE.Vector3(point.x, 0.24, point.y),
             );
             if (points.length < 2) return;
-            const covariance = modeForecast.covariance_trace.at(-1) ?? 0;
             future.add(
               trajectoryTube(
                 points,
+                modeForecast.covariance_trace,
                 actorIdColors[actorForecast.actor_id] ?? 0xffffff,
-                0.055 + modeForecast.probability * 0.18 + Math.min(covariance, 1.5) * 0.018,
-                0.18 + modeForecast.probability * 0.72,
+                modeForecast.probability,
               ),
             );
           });
         });
         renderedForecasts = currentForecasts;
       }
-      ego.position.set(-5.2, 0.45, -22 + t * 1.65);
-      sedan.position.set(-25 + t * 1.5, 0.4, -5);
+      // Forecasts are anchored at replay t=6.2s. Before that instant actors
+      // converge on the tube origins; after it they follow the "continue"
+      // realization while the full forecast fan stays fixed for comparison.
+      const actorPositions = replayActorPositions(t);
+      ego.position.set(actorPositions["ego-01"][0], 0.45, actorPositions["ego-01"][1]);
+      sedan.position.set(actorPositions["veh-27"][0], 0.4, actorPositions["veh-27"][1]);
       sedan.rotation.y = Math.PI / 2;
       van.visible = mode !== "removed";
-      van.position.set(mode === "shifted" ? 8 : 2.4, 1.18, mode === "shifted" ? 20.5 : 11);
-      van.rotation.y = mode === "shifted" ? Math.PI / 2 : 0;
-      pedestrian.position.set(3.2 - Math.max(t - 5, 0) * 0.72, 0, 14);
+      van.position.set(-2.2, 1.18, mode === "shifted" ? 19 : 11);
+      van.rotation.y = 0;
+      pedestrian.position.set(actorPositions["ped-04"][0], 0, actorPositions["ped-04"][1]);
       pedestrian.rotation.y = Math.PI / 2;
-      cyclist.position.set(5.4, 0, 26 - t * 1.23);
+      cyclist.position.set(actorPositions["cyc-09"][0], 0, actorPositions["cyc-09"][1]);
       detectionBoxes.ego.position.copy(ego.position);
       detectionBoxes.sedan.position.copy(sedan.position);
       detectionBoxes.sedan.rotation.copy(sedan.rotation);
@@ -456,6 +511,8 @@ export function SceneCanvas({ time, obstruction, layers, forecasts, risk, select
       occupancy.rotation.y = elapsed * 0.06;
       scan.scale.setScalar(0.84 + ((elapsed * 0.48) % 1) * 0.34);
       scan.material.opacity = 0.52 - ((elapsed * 0.48) % 1) * 0.34;
+      scan.position.x = ego.position.x;
+      scan.position.z = ego.position.z;
       actorGroup.children.forEach((actor) => {
         const actorId = actor.userData.actorId;
         const isSelected = actorId === selected;
@@ -476,7 +533,7 @@ export function SceneCanvas({ time, obstruction, layers, forecasts, risk, select
       renderer.forceContextLoss();
       mount.removeChild(renderer.domElement);
     };
-  }, []);
+  }, [theme]);
 
   return (
     <div

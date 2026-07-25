@@ -49,11 +49,15 @@ export type CalibrationMetric = {
 };
 
 export const ACTOR_ORDER = ["ego-01", "veh-27", "ped-04", "cyc-09"] as const;
+export const FORECAST_ANCHOR_S = 6.2;
 
 const actors = {
   "ego-01": { position: [-5.2, -12], velocity: [0, 9.8], kind: "ego" },
   "veh-27": { position: [-14, -5], velocity: [7.1, 0], kind: "vehicle" },
-  "ped-04": { position: [3.2, 14], velocity: [-1.4, 0], kind: "pedestrian" },
+  // The pedestrian and ego reach (-5.2, 14) about 2.5 s after the
+  // shared forecast anchor. This keeps the displayed conflict physically
+  // legible instead of merely drawing two trajectories that cross in space.
+  "ped-04": { position: [-1.8, 14], velocity: [-1.4, 0], kind: "pedestrian" },
   "cyc-09": { position: [5.4, 18], velocity: [0, -4.2], kind: "cyclist" },
 } as const;
 
@@ -62,6 +66,25 @@ const visibilityByObstruction: Record<ObstructionMode, number> = {
   shifted: 0.72,
   removed: 0.96,
 };
+
+export function replayActorPositions(time: number): Record<(typeof ACTOR_ORDER)[number], readonly [number, number]> {
+  // The timeline shows 4.2 s of observed approach before T₀, followed by the
+  // highest-probability "continue" rollout. The full prediction fan stays
+  // anchored at T₀ so viewers can compare the realized path with alternatives.
+  const replayDelta = Math.max(-4.2, Math.min(5.8, time - FORECAST_ANCHOR_S));
+  return Object.fromEntries(
+    ACTOR_ORDER.map((actorId) => {
+      const actor = actors[actorId];
+      return [
+        actorId,
+        [
+          actor.position[0] + replayDelta * actor.velocity[0],
+          actor.position[1] + replayDelta * actor.velocity[1],
+        ] as const,
+      ];
+    }),
+  ) as Record<(typeof ACTOR_ORDER)[number], readonly [number, number]>;
+}
 
 const fixtureMetrics: CalibrationMetric[] = [
   { model: "graph-diffusion-surrogate", min_ade_m: 0.82, miss_rate: 0.062, expected_calibration_error: 0.041, brier_score: 0.118, p95_latency_ms: 36, ood_auroc: 0.84, provenance: "synthetic_portfolio_fixture" },
@@ -126,7 +149,9 @@ function localActorForecast(
     counts[draw < weights[0] ? 0 : draw < weights[0] + weights[1] ? 1 : 2] += 1;
   }
   const probability = counts.map((count) => count / counts.reduce((sum, value) => sum + value, 0));
-  const occlusionBoost = actorId === "ped-04" && obstruction === "present" ? 0.28 : 0;
+  const occlusionBoost = actorId === "ped-04"
+    ? (1 - visibilityByObstruction[obstruction]) * 0.41
+    : 0;
   const interactionBoost = actorId === "ped-04" || actorId === "ego-01" ? 0.12 : 0.03;
   const curves = [0, actor.kind === "pedestrian" ? -1.8 : 1.6, actor.kind === "pedestrian" ? 2.1 : -2.4];
   const speedScales = [1, 0.47, 0.76];
