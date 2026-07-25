@@ -1,5 +1,8 @@
 # Vector Field — Autonomous Motion Forecasting Laboratory
 
+[![Live preview](https://img.shields.io/badge/live-preview-2ea44f?logo=github)](https://marinjursic.github.io/autonomous-motion-forecasting-lab/)
+[![Preview status](https://github.com/MarinJursic/autonomous-motion-forecasting-lab/actions/workflows/pages.yml/badge.svg)](https://github.com/MarinJursic/autonomous-motion-forecasting-lab/actions/workflows/pages.yml)
+
 An interactive, dataset-free laboratory for inspecting multimodal motion forecasts, occupancy risk, occlusion uncertainty, and controlled counterfactuals in autonomous-driving scenes.
 
 > **Portfolio research prototype, not a driving system.** The shipped model is a deterministic, auditable surrogate designed to demonstrate product and systems architecture without credentials, proprietary weights, or licensed datasets.
