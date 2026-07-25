@@ -142,9 +142,44 @@ main { min-height: 100vh; overflow: hidden; }
 .legend-block > div:last-child { display: flex; justify-content: space-between; color: #657a72; font: 8px var(--font-geist-mono); }
 
 .viewport-panel { position: relative; min-width: 0; overflow: hidden; background: var(--viewport); }
+.analytic-scene { position: absolute; inset: 0; opacity: 1; transition: opacity .35s ease; }
+.analytic-scene.hidden { opacity: 0; pointer-events: none; }
 .scene-canvas { position: absolute; inset: 0; }
 .scene-canvas:focus-visible { outline: 2px solid var(--acid); outline-offset: -3px; }
 .scene-canvas canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+.street-reference {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: #060a09;
+  transition: opacity .35s ease;
+}
+.street-reference.visible { opacity: 1; pointer-events: auto; }
+.street-reference video { width: 100%; height: 100%; display: block; object-fit: cover; }
+.reference-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(4,10,9,.3), transparent 36%, rgba(4,10,9,.78));
+  pointer-events: none;
+}
+.reference-caption {
+  position: absolute;
+  z-index: 2;
+  left: 22px;
+  bottom: 24px;
+  max-width: 390px;
+  padding: 14px 16px;
+  background: rgba(4,10,9,.76);
+  border: 1px solid rgba(89,255,207,.28);
+  backdrop-filter: blur(10px);
+}
+.reference-caption span, .reference-caption strong, .reference-caption small { display: block; }
+.reference-caption span { color: var(--mint); font: 8px var(--font-geist-mono); letter-spacing: .12em; }
+.reference-caption strong { margin-top: 5px; color: #fff; font-size: 15px; font-weight: 550; }
+.reference-caption small { margin-top: 4px; color: #b5c4bf; font: 8px var(--font-geist-mono); }
+.reference-caption a { display: inline-block; margin-top: 9px; color: var(--acid); font: 8px var(--font-geist-mono); }
+.reference-toggle.active { color: var(--acid); border-color: rgba(184,255,106,.48); }
 .view-badge, .scene-title, .model-chip, .risk-callout, .orientation { position: absolute; z-index: 2; pointer-events: none; }
 .view-badge { top: 16px; left: 18px; padding: 6px 8px; background: var(--overlay); border: 1px solid var(--line); color: var(--muted); font: 8px var(--font-geist-mono); letter-spacing: .1em; backdrop-filter: blur(6px); }
 .scene-title { top: 19px; left: 50%; transform: translateX(-50%); text-align: center; }

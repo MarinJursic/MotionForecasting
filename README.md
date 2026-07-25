@@ -2,17 +2,21 @@
 
 An interactive, dataset-free laboratory for inspecting multimodal motion forecasts, occupancy risk, occlusion uncertainty, and controlled counterfactuals in autonomous-driving scenes.
 
-![Vector Field laboratory overview](docs/media/vector-field-overview.png)
-
-**Laboratory overview.** The selected pedestrian is partially hidden by the delivery van. Colored forecast tubes show mutually exclusive futures, the warm occupancy field marks the ego–pedestrian conflict region, and the right rail exposes the probabilities and visibility used by the deterministic risk model.
-
-<p align="center">
-  <img src="docs/media/hidden-pedestrian-counterfactual.gif" alt="The hidden-pedestrian obstruction counterfactual lowers predicted risk when the delivery van is moved or removed." width="900" />
-</p>
-
-**Counterfactual showcase.** The animation keeps the map, actors, intent, horizon, sample count, and seed fixed while moving one obstruction. Watch the visibility, future-mode probabilities, occupancy field, TTC, and risk update together.
-
 > **Portfolio research prototype, not a driving system.** The shipped model is a deterministic, auditable surrogate designed to demonstrate product and systems architecture without credentials, proprietary weights, or licensed datasets.
+
+## Real-world visual standard
+
+The former diagram-rendered overview and GIF have been removed from this README.
+They were useful model diagrams, but they looked like product footage. Repository
+showcases must now be literal captures of the running app or clearly attributed
+real-world source footage—never a stylized animation presented as a walkthrough.
+
+For visual context, the default scenario is set on Market Street in San Francisco.
+The project links to the 35-second, 1920×1080
+[Street traffic reference video](https://commons.wikimedia.org/wiki/File:Street_traffic.webm),
+credited to the original YouTube user `Editor` under CC BY 3.0. It is reference
+footage only and is not represented as model input, tracked actors, or evaluation
+evidence.
 
 ## Why this exists
 
@@ -42,9 +46,13 @@ Drag the 3D viewport to orbit, scroll to zoom, and click an actor to inspect it.
 
 The replay has an explicit temporal interpretation: `0–2.0 s` is a short pre-roll hold, `2.0–6.2 s` is observed approach history, `T₀ = 6.2 s` is the shared origin of every prediction tube, and the remaining timeline follows the highest-probability `continue` realization while the alternative fan stays anchored for comparison.
 
-### Reproducible showcase media
+### Reproducible analysis figures
 
-The PNG and animated GIF are reproducible explanatory artifacts, not photographs, dataset frames, or benchmark captures. `scripts/render_readme_media.py` imports the shipped Python engine, runs all three obstruction modes with seed `42` and `128` samples, and draws the returned probabilities, uncertainty, visibility, risk, and TTC. This makes every number in the showcase traceable to the same code path as the API:
+`scripts/render_readme_media.py` can still generate engineering figures for local
+model inspection. Those artifacts are deliberately not embedded as app
+walkthroughs. The script imports the shipped Python engine, runs all three
+obstruction modes with seed `42` and `128` samples, and draws the returned
+probabilities, uncertainty, visibility, risk, and TTC:
 
 ```bash
 backend/.venv/bin/python scripts/render_readme_media.py
