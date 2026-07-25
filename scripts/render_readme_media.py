@@ -110,7 +110,9 @@ def dashboard(obstruction: ObstructionMode, phase: float = 0) -> Image.Image:
 
     # risk heat map
     center = (765, 450)
-    for radius, alpha, color in [(160, 20, AMBER), (120, 30, "#ff9a55"), (80, 45, DANGER), (42, 80, DANGER)]:
+    risk_scale = 0.52 + result.risk.collision_probability * 0.68
+    for base_radius, alpha, color in [(160, 20, AMBER), (120, 30, "#ff9a55"), (80, 45, DANGER), (42, 80, DANGER)]:
+        radius = round(base_radius * risk_scale)
         draw.ellipse((center[0] - radius, center[1] - radius * .55, center[0] + radius, center[1] + radius * .55), fill=(*ImageColor_getrgb(color), alpha))
 
     # trajectories

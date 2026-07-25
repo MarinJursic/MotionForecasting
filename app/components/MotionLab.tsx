@@ -13,6 +13,8 @@ import {
 } from "../lib/motion-domain";
 import { LayerState, SceneCanvas } from "./SceneCanvas";
 
+type Theme = "dark" | "light";
+
 const ACTORS = [
   { id: "ego-01", type: "Ego vehicle", color: "white", speed: "9.8 m/s", uncertainty: "0.08" },
   { id: "veh-27", type: "Vehicle", color: "blue", speed: "7.1 m/s", uncertainty: "0.16" },
@@ -36,6 +38,7 @@ function modelLabel(model: string) {
 }
 
 export function MotionLab() {
+  const [theme, setTheme] = useState<Theme>("dark");
   const [time, setTime] = useState(6.2);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
@@ -55,6 +58,24 @@ export function MotionLab() {
   const [metrics, setMetrics] = useState<CalibrationMetric[]>(localCalibrationMetrics);
   const [apiStatus, setApiStatus] = useState<"checking" | "connected" | "local">("checking");
   const [toast, setToast] = useState("");
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem("vector-field-theme");
+    const preferred: Theme = stored === "light" || stored === "dark"
+      ? stored
+      : window.matchMedia("(prefers-color-scheme: light)").matches
+        ? "light"
+        : "dark";
+    setTheme(preferred);
+    document.documentElement.dataset.theme = preferred;
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme: Theme = theme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+    window.localStorage.setItem("vector-field-theme", nextTheme);
+  };
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -136,6 +157,17 @@ export function MotionLab() {
         </div>
         <div className="header-actions">
           <span className={`api-status ${apiStatus}`}><i />{apiStatus === "connected" ? "API LIVE" : apiStatus === "local" ? "LOCAL ENGINE" : "CONNECTING"}</span>
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            aria-pressed={theme === "light"}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+          >
+            <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+            {theme === "dark" ? "LIGHT" : "DARK"}
+          </button>
           <a href="https://github.com/waymo-research/waymo-open-dataset" target="_blank" rel="noreferrer">DATA ADAPTER ↗</a>
         </div>
       </header>
@@ -184,6 +216,7 @@ export function MotionLab() {
             risk={risk}
             selectedActor={selectedActor}
             onSelectActor={setSelectedActor}
+            theme={theme}
           />
           <div className="view-badge">BIRD’S-EYE · 42 M AGL</div>
           <div className="scene-title">

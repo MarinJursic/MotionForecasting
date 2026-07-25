@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-import random
+from collections.abc import Callable
 
 from .schemas import (
     ActorForecast,
@@ -17,11 +17,26 @@ from .schemas import (
 SCENARIO_ACTORS = {
     "ego-01": {"position": (-5.2, -12.0), "velocity": (0.0, 9.8), "kind": "ego"},
     "veh-27": {"position": (-14.0, -5.0), "velocity": (7.1, 0.0), "kind": "vehicle"},
-    "ped-04": {"position": (3.2, 14.0), "velocity": (-1.4, 0.0), "kind": "pedestrian"},
+    # At the shared forecast anchor, the pedestrian and ego are both about
+    # 2.5 seconds from the northbound lane/crosswalk conflict point.
+    "ped-04": {"position": (-1.8, 14.0), "velocity": (-1.4, 0.0), "kind": "pedestrian"},
     "cyc-09": {"position": (5.4, 18.0), "velocity": (0.0, -4.2), "kind": "cyclist"},
 }
 
 VISIBILITY_BY_OBSTRUCTION = {"present": 0.31, "shifted": 0.72, "removed": 0.96}
+
+
+def _seeded_random(seed: int) -> Callable[[], float]:
+    """Return the same unsigned 32-bit LCG used by the browser fallback."""
+
+    state = seed & 0xFFFFFFFF
+
+    def draw() -> float:
+        nonlocal state
+        state = (1664525 * state + 1013904223) & 0xFFFFFFFF
+        return state / 0x100000000
+
+    return draw
 
 
 def _trajectory(
@@ -48,10 +63,18 @@ def _trajectory(
     return points, covariance
 
 
-def _actor_forecast(actor_id: str, request: ForecastRequest, rng: random.Random) -> ActorForecast:
+def _actor_forecast(
+    actor_id: str,
+    request: ForecastRequest,
+    random_draw: Callable[[], float],
+) -> ActorForecast:
     actor = SCENARIO_ACTORS[actor_id]
     kind = actor["kind"]
-    occlusion_boost = 0.28 if actor_id == "ped-04" and request.obstruction == "present" else 0.0
+    occlusion_boost = (
+        (1 - VISIBILITY_BY_OBSTRUCTION[request.obstruction]) * 0.41
+        if actor_id == "ped-04"
+        else 0.0
+    )
     interaction_boost = 0.12 if actor_id in {"ped-04", "ego-01"} else 0.03
     base_weights = {
         "pedestrian": [0.61, 0.27, 0.12],
@@ -68,8 +91,12 @@ def _actor_forecast(actor_id: str, request: ForecastRequest, rng: random.Random)
         }[request.obstruction]
     # Allocate the requested seeded samples to the three hypotheses. Laplace
     # smoothing avoids zero-probability modes for very small valid sample counts.
-    sampled_modes = rng.choices(range(3), weights=weights, k=request.samples)
-    counts = [sampled_modes.count(index) + 1 for index in range(3)]
+    counts = [1, 1, 1]
+    first_threshold = weights[0]
+    second_threshold = weights[0] + weights[1]
+    for _ in range(request.samples):
+        draw = random_draw()
+        counts[0 if draw < first_threshold else 1 if draw < second_threshold else 2] += 1
     probabilities = [count / sum(counts) for count in counts]
     labels = ["continue", "yield", "deviate"]
     curves = [0.0, 1.6 if kind != "pedestrian" else -1.8, -2.4 if kind != "pedestrian" else 2.1]
@@ -131,8 +158,11 @@ def forecast(request: ForecastRequest) -> ForecastResponse:
     lightweight and auditable, not a learned production driving model.
     """
 
-    rng = random.Random(request.seed)
-    forecasts = [_actor_forecast(actor_id, request, rng) for actor_id in SCENARIO_ACTORS]
+    random_draw = _seeded_random(request.seed)
+    forecasts = [
+        _actor_forecast(actor_id, request, random_draw)
+        for actor_id in SCENARIO_ACTORS
+    ]
     return ForecastResponse(
         scenario_id=request.scenario_id,
         model="graph-diffusion-surrogate-v0.4",

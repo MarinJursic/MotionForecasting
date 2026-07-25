@@ -1,12 +1,16 @@
 # Vector Field — Autonomous Motion Forecasting Laboratory
 
-An interactive, dataset-free laboratory for inspecting multimodal motion forecasts, occupancy risk, occlusion uncertainty, and causal counterfactuals in autonomous-driving scenes.
+An interactive, dataset-free laboratory for inspecting multimodal motion forecasts, occupancy risk, occlusion uncertainty, and controlled counterfactuals in autonomous-driving scenes.
 
 ![Vector Field laboratory overview](docs/media/vector-field-overview.png)
+
+**Laboratory overview.** The selected pedestrian is partially hidden by the delivery van. Colored forecast tubes show mutually exclusive futures, the warm occupancy field marks the ego–pedestrian conflict region, and the right rail exposes the probabilities and visibility used by the deterministic risk model.
 
 <p align="center">
   <img src="docs/media/hidden-pedestrian-counterfactual.gif" alt="The hidden-pedestrian obstruction counterfactual lowers predicted risk when the delivery van is moved or removed." width="900" />
 </p>
+
+**Counterfactual showcase.** The animation keeps the map, actors, intent, horizon, sample count, and seed fixed while moving one obstruction. Watch the visibility, future-mode probabilities, occupancy field, TTC, and risk update together.
 
 > **Portfolio research prototype, not a driving system.** The shipped model is a deterministic, auditable surrogate designed to demonstrate product and systems architecture without credentials, proprietary weights, or licensed datasets.
 
@@ -22,7 +26,7 @@ Motion prediction is not “draw one future line.” A useful system must repres
 - a causal editor that holds actor intent and initial state fixed while moving or removing an obstruction;
 - a typed FastAPI service with deterministic graph/diffusion-inspired forecasts and tested Waymo/CARLA normalization boundaries.
 
-The default story is intentionally legible in seconds: a pedestrian is hidden by a delivery van near a crosswalk. With seed `42` and `128` samples, removing the van changes visibility from `31%` to `96%`; the bundled synthetic conflict model reruns the pedestrian modes and changes collision risk from `70.1%` to `21.4%`. These are deterministic demonstration outputs, not measured road-safety performance.
+The default story is intentionally legible in seconds: a pedestrian is hidden by a delivery van near a crosswalk. At forecast time `T₀ = 6.2 s`, the northbound ego vehicle and westbound pedestrian are both about 2.5 seconds from the same lane/crosswalk conflict point. With seed `42` and `128` samples, removing the van changes visibility from `31%` to `96%`; the bundled synthetic conflict model reruns the pedestrian modes and changes collision risk from `77.1%` to `19.8%`. These are deterministic demonstration outputs, not measured road-safety performance.
 
 ## Product walkthrough
 
@@ -32,12 +36,15 @@ The default story is intentionally legible in seconds: a pedestrian is hidden by
 4. **Read uncertainty.** Compare future-mode probability, trajectory entropy, visibility, calibrated collision likelihood, and OOD score.
 5. **Run the counterfactual.** Choose “keep,” “shift 8m north,” or “remove,” then rerun 128 seeded mode allocations. The returned forecast replaces the scene’s tubes, risk, TTC, visibility, entropy, OOD proxy, and heatmap scale.
 6. **Compare evidence.** See the graph-diffusion surrogate against scene-transformer and constant-velocity synthetic fixtures without presenting them as benchmark results.
+7. **Change appearance.** Switch between persistent dark and light themes; the interface and the Three.js lighting, fog, road, buildings, markings, and sensor returns all change together.
 
 Drag the 3D viewport to orbit, scroll to zoom, and click an actor to inspect it. Keyboard users can focus the viewport and use the arrow keys to change the selected actor; buttons, switches, timeline, and counterfactual dialog expose native focus states and labels.
 
-### README media
+The replay has an explicit temporal interpretation: `0–2.0 s` is a short pre-roll hold, `2.0–6.2 s` is observed approach history, `T₀ = 6.2 s` is the shared origin of every prediction tube, and the remaining timeline follows the highest-probability `continue` realization while the alternative fan stays anchored for comparison.
 
-The PNG and animated GIF are reproducible documentation artifacts, not photographs or benchmark captures. `scripts/render_readme_media.py` imports the shipped Python engine, runs all three obstruction modes with seed `42` and `128` samples, and draws the returned probabilities, uncertainty, visibility, risk, and TTC:
+### Reproducible showcase media
+
+The PNG and animated GIF are reproducible explanatory artifacts, not photographs, dataset frames, or benchmark captures. `scripts/render_readme_media.py` imports the shipped Python engine, runs all three obstruction modes with seed `42` and `128` samples, and draws the returned probabilities, uncertainty, visibility, risk, and TTC. This makes every number in the showcase traceable to the same code path as the API:
 
 ```bash
 backend/.venv/bin/python scripts/render_readme_media.py
@@ -78,7 +85,9 @@ The bundled engine is intentionally transparent:
 4. Smoothed empirical frequencies are normalized per actor and returned as mode probabilities.
 5. A documented logistic conflict function combines the pedestrian’s crossing probability and visibility to produce the scenario risk and expected time to collision.
 
-The same request, seed, sample count, horizon, and obstruction return byte-for-byte equivalent JSON. Changing the seed or sample count changes the empirical mode allocation. This makes controlled comparisons reproducible; it does **not** make the surrogate learned or validated.
+Each tube starts at its actor’s `T₀` pose. Segment radius grows with the square root of covariance trace, while opacity tracks mode probability. The occupancy field is centered on the tested lane/crosswalk conflict point and scales with returned collision risk.
+
+The Python API and TypeScript offline fallback use the same documented unsigned 32-bit seeded generator and categorical allocation. The same request therefore produces the same actor-mode allocation, risk, visibility, and TTC whether the API is connected or the browser is offline. Changing the seed or sample count changes the empirical allocation. This makes controlled comparisons reproducible; it does **not** make the surrogate learned or validated.
 
 ## Counterfactual semantics
 
@@ -94,9 +103,9 @@ Controlled variables are:
 
 | Intervention | Pedestrian visibility | Collision risk | Expected TTC |
 | --- | ---: | ---: | ---: |
-| Van present | 31% | 70.1% | 2.40 s |
-| Shifted 8 m north | 72% | 38.6% | 4.92 s |
-| Removed | 96% | 21.4% | 6.29 s |
+| Van present | 31% | 77.1% | 1.84 s |
+| Shifted 8 m north | 72% | 42.5% | 4.60 s |
+| Removed | 96% | 19.8% | 6.42 s |
 
 The API returns both baseline and counterfactual `ForecastResponse` objects so clients can prove that trajectories and risk were recomputed instead of merely relabeling a cached score. The table is generated with the default seed/sample count and is not an empirical safety claim.
 
@@ -136,8 +145,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). The OpenAPI explorer is at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 
-If the API is unavailable, the UI remains fully explorable with its deterministic local story data and clearly labels itself `LOCAL ENGINE`.
-The fallback implements the same response shape and seeded intervention semantics, but its JavaScript PRNG is not expected to match Python sample-for-sample.
+If the API is unavailable, the UI remains fully explorable with its deterministic local story data and clearly labels itself `LOCAL ENGINE`. The fallback implements the same response shape and the same seeded allocation as Python.
 
 ## API
 
@@ -210,13 +218,17 @@ After separately installing Waymo’s official package and accepting its license
 
 Convert a CARLA world snapshot—transform, bounding extent, velocity, visibility, map primitives—to the same normalized mapping before calling `CarlaAdapter.load()`. Because the forecasting core depends only on that validated contract, simulator scenarios and dataset replays can share the visualization and evaluation path without importing CARLA into the default demo.
 
+CARLA’s official convention is left-handed, with `+X` forward, `+Y` right, `+Z` up, meters, and degrees. The adapter boundary expects callers to convert those values into this project’s right-handed ENU mapping before validation; it does not silently relabel raw CARLA coordinates.
+
 ## Research grounding
 
 - The [Waymo Open Dataset overview](https://waymo.com/open/about/) documents the motion dataset’s trajectories, 3D maps, 20-second 10 Hz segments, and vehicle/pedestrian/cyclist labels.
 - The [Waymo Open Motion Dataset paper](https://waymo.com/research/large-scale-interactive-motion-forecasting-for-autonomous-driving--the-waymo-open-motion-dataset/) motivates joint predictions for interactive scenarios rather than isolated single-actor forecasts.
+- Waymo’s [MotionDiffuser publication](https://waymo.com/research/motiondiffuser-controllable-multi-agent-motion-prediction-using-diffusion/) grounds the project’s multimodal, controllable-sampling product vocabulary; this repository implements only a transparent surrogate, not that trained model.
 - Waymo’s [challenge overview](https://waymo.com/open/challenges/) includes motion prediction, interaction prediction, simulation agents, and occupancy/flow evaluation tracks.
 - Waymo’s [official FAQ](https://waymo.com/open/faq/) states the license/distribution constraints and cautions against interpreting the dataset as evidence of a particular real vehicle’s behavior.
-- [CARLA’s official project description](https://carla.org/) describes its open simulator, controllable actors, maps, weather, and sensor suites for autonomous-driving research.
+- [CARLA’s coordinate documentation](https://carla.readthedocs.io/en/latest/coordinates/) defines its left-handed axes and unit conventions, which must be converted before crossing the ENU adapter boundary.
+- The [CARLA Python API](https://carla.readthedocs.io/en/latest/python_api/) documents snapshots, actor transforms and velocities, and bounding-box half-extents used by a production snapshot decoder.
 - The [Three.js `WebGLRenderer` documentation](https://threejs.org/docs/pages/WebGLRenderer.html) defines the WebGL 2 rendering surface used by the scene.
 - The [FastAPI documentation](https://fastapi.tiangolo.com/python-types/) explains the type-hint-based validation and generated OpenAPI contract used by the service.
 
