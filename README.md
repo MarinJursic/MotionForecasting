@@ -7,19 +7,20 @@ An interactive, dataset-free laboratory for inspecting multimodal motion forecas
 
 > **Portfolio research prototype, not a driving system.** The shipped model is a deterministic, auditable surrogate designed to demonstrate product and systems architecture without credentials, proprietary weights, or licensed datasets.
 
-## Real-world visual standard
+## Continuous app walkthrough
 
-The former diagram-rendered overview and GIF have been removed from this README.
-They were useful model diagrams, but they looked like product footage. Repository
-showcases must now be literal captures of the running app or clearly attributed
-real-world source footage—never a stylized animation presented as a walkthrough.
+[![Continuous app walkthrough: genuine Market Street footage, analytic twin, and counterfactual](docs/walkthrough/app-walkthrough.gif)](docs/walkthrough/app-walkthrough.mp4)
 
-For visual context, the default scenario is set on Market Street in San Francisco.
-The project links to the 35-second, 1920×1080
-[Street traffic reference video](https://commons.wikimedia.org/wiki/File:Street_traffic.webm),
-credited to the original YouTube user `Editor` under CC BY 3.0. It is reference
-footage only and is not represented as model input, tracked actors, or evaluation
-evidence.
+[Watch or download the full-resolution MP4](docs/walkthrough/app-walkthrough.mp4) · [Open the poster frame](docs/walkthrough/app-walkthrough-poster.jpg)
+
+This is one continuous capture of the running application. It begins with genuine
+[Market Street traffic footage](https://commons.wikimedia.org/wiki/File:Street_traffic.webm)
+by `Editor` (CC BY 3.0), then enters the interactive Three.js analytic twin and runs
+the delivery-van counterfactual. The final comparison shows the forecast recomputed
+after removing the obstruction: pedestrian visibility changes from `31%` to `96%`
+and the demonstration collision-risk estimate changes from `77.1%` to `19.8%`.
+The street video supplies real-world visual context only; it is not represented as
+model input, tracked actors, or evaluation evidence.
 
 ## Why this exists
 
@@ -280,6 +281,7 @@ CARLA’s official convention is left-handed, with `+X` forward, `+Y` right, `+Z
 │   ├── tests/test_api.py
 │   └── requirements.txt
 ├── docs/media/
+├── docs/walkthrough/
 ├── scripts/render_readme_media.py
 └── tests/rendered-html.test.mjs
 ```
