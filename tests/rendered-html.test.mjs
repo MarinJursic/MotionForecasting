@@ -20,45 +20,52 @@ test("server-renders the motion forecasting laboratory shell", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>Vector Field/);
-  assert.match(html, /AUTONOMOUS MOTION LAB/);
-  assert.match(html, /Occluded crosswalk emergence/);
-  assert.match(html, /RUN COUNTERFACTUAL/);
+  assert.match(html, /<title>Vector Field — Real-World Motion Evidence Lab<\/title>/);
+  assert.match(html, /Motion evidence lab/);
+  assert.match(html, /Four-way signal phase/);
+  assert.match(html, /Gaithersburg, Maryland/);
+  assert.match(html, /Run counterfactual/);
   assert.match(html, /Switch to light theme/);
-  assert.match(html, /REAL STREET VIDEO/);
+  assert.match(html, /Footage first/);
+  assert.match(html, /no synthetic vehicles/);
   assert.doesNotMatch(html, /starter-preview|react-loading-skeleton|Your site is taking shape/);
 });
 
-test("ships scenario layers, time controls, evidence metrics, and both themes", async () => {
-  const [page, client, scene, css, layout, pkg] = await Promise.all([
+test("ships footage-first scenarios, synchronized overlays, controls, and both themes", async () => {
+  const [page, client, scenarios, css, layout, pkg, notices] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/components/MotionLab.tsx", root), "utf8"),
-    readFile(new URL("app/components/SceneCanvas.tsx", root), "utf8"),
+    readFile(new URL("app/lib/scenarios.ts", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
     readFile(new URL("app/layout.tsx", root), "utf8"),
     readFile(new URL("package.json", root), "utf8"),
+    readFile(new URL("THIRD_PARTY_NOTICES.md", root), "utf8"),
   ]);
   assert.match(page, /MotionLab/);
-  assert.match(client, /Probability tubes/);
-  assert.match(client, /Occupancy \+ collision/);
-  assert.match(client, /RERUN 128 SAMPLES/);
-  assert.match(client, /fetchCounterfactual/);
-  assert.match(client, /counterfactual_forecast/);
-  assert.match(client, /Special:Redirect\/file\/Street%20traffic\.webm/);
-  assert.match(client, /Context footage only · not model input or tracking evidence/);
-  assert.match(client, /expected_calibration_error|Graph diffusion|ECE/);
-  assert.match(scene, /OrbitControls/);
-  assert.match(scene, /TubeGeometry/);
-  assert.match(scene, /PointsMaterial/);
-  assert.match(scene, /detectionBoxes/);
-  assert.match(scene, /ped-04/);
-  assert.match(scene, /replayActorPositions/);
-  assert.match(scene, /background:\s*0xdce8e2/);
-  assert.match(scene, /toneMappingExposure = lightTheme/);
+  assert.match(client, /Reviewed detections/);
+  assert.match(client, /Observed trails/);
+  assert.match(client, /Forecast branches/);
+  assert.match(client, /Conflict occupancy/);
+  assert.match(client, /Visibility field/);
+  assert.match(client, /fetchEvidenceCounterfactual/);
+  assert.match(client, /scenario\.id,\s*selectedTrack\.id,\s*draftObstruction/);
+  assert.match(client, /requestVideoFrameCallback/);
+  assert.match(client, /video\.currentTime/);
+  assert.match(client, /reviewed demonstration annotations/i);
+  assert.match(client, /Metrics are synthetic test evidence/);
+  assert.match(scenarios, /gaithersburg-intersection\.webm/);
+  assert.match(scenarios, /market-street\.webm/);
+  assert.match(scenarios, /cologne-night\.webm/);
+  assert.match(scenarios, /interpolateActor/);
+  assert.match(scenarios, /forecastPaths/);
   assert.match(client, /vector-field-theme/);
-  assert.match(client, /aria-pressed=\{theme === "light"\}/);
   assert.match(css, /html\[data-theme="light"\]/);
+  assert.match(css, /@media \(max-width: 650px\)/);
+  assert.match(css, /\.video-bay\s*\{[\s\S]*?order:\s*0;/);
   assert.match(layout, /prefers-color-scheme: light/);
-  assert.match(pkg, /"three"/);
+  assert.match(notices, /G\. Edward Johnson/);
+  assert.match(notices, /Maximilian Schönherr/);
+  assert.match(pkg, /"next"/);
   assert.doesNotMatch(pkg, /react-loading-skeleton/);
+  assert.doesNotMatch(client, /SceneCanvas|<Canvas|low-poly/i);
 });

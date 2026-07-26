@@ -48,6 +48,68 @@ export type CalibrationMetric = {
   provenance: "synthetic_portfolio_fixture";
 };
 
+export type EvidenceModeProbability = {
+  label: "continue" | "yield" | "deviate";
+  probability: number;
+};
+
+export type EvidenceCounterfactualResponse = {
+  scenario_id: string;
+  actor_id: string;
+  actor_kind: "vehicle" | "bus" | "cyclist";
+  intervention: ObstructionMode;
+  deterministic_seed: number;
+  sample_count: number;
+  baseline_risk: number;
+  counterfactual_risk: number;
+  baseline_visibility: number;
+  counterfactual_visibility: number;
+  mode_probabilities: EvidenceModeProbability[];
+  risk_delta: number;
+  changed_variable: string;
+  controlled_variables: string[];
+};
+
+type EvidenceProfile = {
+  baselineRisk: number;
+  visibility: number;
+  actors: Record<string, {
+    kind: "vehicle" | "bus" | "cyclist";
+    confidence: number;
+  }>;
+};
+
+const EVIDENCE_PROFILES: Record<string, EvidenceProfile> = {
+  gaithersburg: {
+    baselineRisk: 0.38,
+    visibility: 0.94,
+    actors: {
+      "veh-101": { kind: "vehicle", confidence: 0.96 },
+      "veh-204": { kind: "vehicle", confidence: 0.94 },
+      "veh-427": { kind: "vehicle", confidence: 0.95 },
+    },
+  },
+  market: {
+    baselineRisk: 0.46,
+    visibility: 0.78,
+    actors: {
+      "bus-38": { kind: "bus", confidence: 0.98 },
+      "bus-31": { kind: "bus", confidence: 0.97 },
+      "cyc-12": { kind: "cyclist", confidence: 0.9 },
+      "taxi-73": { kind: "vehicle", confidence: 0.93 },
+    },
+  },
+  cologne: {
+    baselineRisk: 0.57,
+    visibility: 0.52,
+    actors: {
+      "veh-08": { kind: "vehicle", confidence: 0.89 },
+      "veh-19": { kind: "vehicle", confidence: 0.91 },
+      "veh-52": { kind: "vehicle", confidence: 0.9 },
+    },
+  },
+};
+
 export const ACTOR_ORDER = ["ego-01", "veh-27", "ped-04", "cyc-09"] as const;
 export const FORECAST_ANCHOR_S = 6.2;
 
@@ -214,6 +276,78 @@ export function createLocalCounterfactual(
   };
 }
 
+function evidenceProfile(scenarioId: string, actorId: string) {
+  const scenario = EVIDENCE_PROFILES[scenarioId as keyof typeof EVIDENCE_PROFILES];
+  const actor = scenario?.actors[actorId];
+  if (!scenario || !actor) throw new Error(`Unknown evidence selection: ${scenarioId}/${actorId}`);
+  const kindAdjustment = actor.kind === "cyclist" ? 0.1 : actor.kind === "bus" ? 0.05 : 0;
+  const reviewUncertainty = (1 - actor.confidence) * 0.22;
+  return {
+    scenario: { id: scenarioId, visibility: scenario.visibility },
+    actor: { id: actorId, kind: actor.kind, confidence: actor.confidence },
+    baselineRisk: Math.min(0.96, Math.max(0.03, scenario.baselineRisk + kindAdjustment + reviewUncertainty)),
+  };
+}
+
+function evidenceModeWeights(kind: "vehicle" | "bus" | "cyclist", intervention: ObstructionMode) {
+  const base = kind === "cyclist" ? [0.55, 0.3, 0.15] : kind === "bus" ? [0.61, 0.3, 0.09] : [0.68, 0.22, 0.1];
+  const shift = intervention === "shifted" ? [-0.1, 0.07, 0.03] : intervention === "removed" ? [-0.18, 0.12, 0.06] : [0, 0, 0];
+  return base.map((value, index) => value + shift[index]);
+}
+
+export function createLocalEvidenceCounterfactual(
+  scenarioId: string,
+  actorId: string,
+  intervention: ObstructionMode,
+  seed = 42,
+  samples = 128,
+): EvidenceCounterfactualResponse {
+  const { scenario, actor, baselineRisk } = evidenceProfile(scenarioId, actorId);
+  const weights = evidenceModeWeights(actor.kind, intervention);
+  const random = seededRandom(seed);
+  const counts = [1, 1, 1];
+  for (let index = 0; index < samples; index += 1) {
+    const draw = random();
+    counts[draw < weights[0] ? 0 : draw < weights[0] + weights[1] ? 1 : 2] += 1;
+  }
+  const countTotal = counts.reduce((sum, value) => sum + value, 0);
+  const labels = ["continue", "yield", "deviate"] as const;
+  const modeProbabilities = labels.map((label, index) => ({
+    label,
+    probability: Number((counts[index] / countTotal).toFixed(6)),
+  }));
+  const sensitivity = actor.kind === "cyclist" ? 1 : actor.kind === "bus" ? 0.85 : 0.75;
+  const reduction = intervention === "shifted" ? 0.24 * sensitivity : intervention === "removed" ? 0.52 * sensitivity : 0;
+  const counterfactualRisk = Math.max(0.03, baselineRisk * (1 - reduction));
+  const counterfactualVisibility = intervention === "shifted"
+    ? scenario.visibility + (1 - scenario.visibility) * 0.55
+    : intervention === "removed" ? 0.99 : scenario.visibility;
+  return {
+    scenario_id: scenario.id,
+    actor_id: actor.id,
+    actor_kind: actor.kind,
+    intervention,
+    deterministic_seed: seed,
+    sample_count: samples,
+    baseline_risk: Number(baselineRisk.toFixed(3)),
+    counterfactual_risk: Number(counterfactualRisk.toFixed(3)),
+    baseline_visibility: scenario.visibility,
+    counterfactual_visibility: Number(counterfactualVisibility.toFixed(3)),
+    mode_probabilities: modeProbabilities,
+    risk_delta: Number((counterfactualRisk - baselineRisk).toFixed(3)),
+    changed_variable: `${scenario.id}:${actor.id}:visibility_context:${intervention}`,
+    controlled_variables: [
+      `scenario:${scenario.id}`,
+      `actor:${actor.id}`,
+      "reviewed track",
+      "source footage",
+      "horizon_s:3",
+      `samples:${samples}`,
+      `seed:${seed}`,
+    ],
+  };
+}
+
 export const localCalibrationMetrics = fixtureMetrics.map((metric) => ({ ...metric }));
 
 export class MotionApiError extends Error {
@@ -281,6 +415,34 @@ export function fetchCounterfactual(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scenario_id: "sf-market-0142", horizon_s: 8, samples: 128, seed: 42, obstruction }),
+      signal,
+    },
+    fetcher,
+  );
+}
+
+export function fetchEvidenceCounterfactual(
+  apiUrl: string,
+  scenarioId: string,
+  actorId: string,
+  intervention: ObstructionMode,
+  signal?: AbortSignal,
+  fetcher: typeof fetch = fetch,
+) {
+  return requestJson<EvidenceCounterfactualResponse>(
+    apiUrl,
+    "/api/evidence-counterfactual",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scenario_id: scenarioId,
+        actor_id: actorId,
+        intervention,
+        horizon_s: 3,
+        samples: 128,
+        seed: 42,
+      }),
       signal,
     },
     fetcher,

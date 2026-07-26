@@ -4,8 +4,10 @@ import test from "node:test";
 import {
   MotionApiError,
   createLocalCounterfactual,
+  createLocalEvidenceCounterfactual,
   createLocalForecast,
   fetchCounterfactual,
+  fetchEvidenceCounterfactual,
   fetchForecast,
   fetchMetrics,
   FORECAST_ANCHOR_S,
@@ -133,4 +135,53 @@ test("API client rejects non-success responses with status and detail", async ()
       && error.status === 404
       && error.message === "Scenario not found",
   );
+});
+
+test("evidence counterfactual binds scenario, reviewed actor, and intervention", () => {
+  const observed = createLocalEvidenceCounterfactual("market", "cyc-12", "present");
+  const shifted = createLocalEvidenceCounterfactual("market", "cyc-12", "shifted");
+  const removed = createLocalEvidenceCounterfactual("market", "cyc-12", "removed");
+  assert.equal(observed.scenario_id, "market");
+  assert.equal(observed.actor_id, "cyc-12");
+  assert.equal(observed.actor_kind, "cyclist");
+  assert.equal(observed.changed_variable, "market:cyc-12:visibility_context:present");
+  assert.ok(observed.counterfactual_risk > shifted.counterfactual_risk);
+  assert.ok(shifted.counterfactual_risk > removed.counterfactual_risk);
+  assert.ok(observed.counterfactual_visibility < shifted.counterfactual_visibility);
+  assert.ok(shifted.counterfactual_visibility < removed.counterfactual_visibility);
+  assert.notDeepEqual(observed.mode_probabilities, removed.mode_probabilities);
+
+  const bus = createLocalEvidenceCounterfactual("market", "bus-38", "present");
+  assert.notEqual(bus.baseline_risk, observed.baseline_risk);
+  assert.notDeepEqual(bus.mode_probabilities, observed.mode_probabilities);
+});
+
+test("evidence client sends the active scenario, actor, and intervention", async () => {
+  const expected = createLocalEvidenceCounterfactual("cologne", "veh-52", "shifted");
+  let captured;
+  const fetcher = async (url, init) => {
+    captured = { url, init };
+    return new Response(JSON.stringify(expected), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  const result = await fetchEvidenceCounterfactual(
+    "http://api.example",
+    "cologne",
+    "veh-52",
+    "shifted",
+    undefined,
+    fetcher,
+  );
+  assert.deepEqual(result, expected);
+  assert.equal(captured.url, "http://api.example/api/evidence-counterfactual");
+  assert.deepEqual(JSON.parse(captured.init.body), {
+    scenario_id: "cologne",
+    actor_id: "veh-52",
+    intervention: "shifted",
+    horizon_s: 3,
+    samples: 128,
+    seed: 42,
+  });
 });

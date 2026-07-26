@@ -4,9 +4,9 @@ import "./globals.css";
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 export const metadata: Metadata = {
-  title: "Vector Field — Autonomous Motion Forecasting Lab",
+  title: "Vector Field — Real-World Motion Evidence Lab",
   description:
-    "An interactive 3D laboratory for multimodal autonomous-driving forecasts, occupancy risk, calibration, and counterfactual replay.",
+    "Review synchronized real intersection and street footage with tracks, multimodal forecasts, occupancy risk, and controlled counterfactuals.",
   icons: { icon: `${basePath}/favicon.svg`, shortcut: `${basePath}/favicon.svg` },
 };
 

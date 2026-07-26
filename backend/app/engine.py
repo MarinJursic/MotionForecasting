@@ -6,6 +6,9 @@ from collections.abc import Callable
 from .schemas import (
     ActorForecast,
     CalibrationMetrics,
+    EvidenceCounterfactualRequest,
+    EvidenceCounterfactualResponse,
+    EvidenceModeProbability,
     ForecastRequest,
     ForecastResponse,
     Point2D,
@@ -24,6 +27,37 @@ SCENARIO_ACTORS = {
 }
 
 VISIBILITY_BY_OBSTRUCTION = {"present": 0.31, "shifted": 0.72, "removed": 0.96}
+
+EVIDENCE_SCENARIOS = {
+    "gaithersburg": {
+        "baseline_risk": 0.38,
+        "visibility": 0.94,
+        "actors": {
+            "veh-101": ("vehicle", 0.96),
+            "veh-204": ("vehicle", 0.94),
+            "veh-427": ("vehicle", 0.95),
+        },
+    },
+    "market": {
+        "baseline_risk": 0.46,
+        "visibility": 0.78,
+        "actors": {
+            "bus-38": ("bus", 0.98),
+            "bus-31": ("bus", 0.97),
+            "cyc-12": ("cyclist", 0.90),
+            "taxi-73": ("vehicle", 0.93),
+        },
+    },
+    "cologne": {
+        "baseline_risk": 0.57,
+        "visibility": 0.52,
+        "actors": {
+            "veh-08": ("vehicle", 0.89),
+            "veh-19": ("vehicle", 0.91),
+            "veh-52": ("vehicle", 0.90),
+        },
+    },
+}
 
 
 def _seeded_random(seed: int) -> Callable[[], float]:
@@ -180,3 +214,93 @@ def calibration_metrics() -> list[CalibrationMetrics]:
         CalibrationMetrics(model="scene-transformer-surrogate", min_ade_m=0.94, miss_rate=0.085, expected_calibration_error=0.068, brier_score=0.146, p95_latency_ms=24, ood_auroc=0.79, provenance="synthetic_portfolio_fixture"),
         CalibrationMetrics(model="constant-velocity", min_ade_m=1.73, miss_rate=0.181, expected_calibration_error=0.142, brier_score=0.231, p95_latency_ms=2, ood_auroc=0.51, provenance="synthetic_portfolio_fixture"),
     ]
+
+
+def evidence_counterfactual(
+    request: EvidenceCounterfactualRequest,
+) -> EvidenceCounterfactualResponse:
+    """Rerun the fixture for the selected real clip and reviewed actor."""
+
+    scenario = EVIDENCE_SCENARIOS[request.scenario_id]
+    actor_profile = scenario["actors"].get(request.actor_id)
+    if actor_profile is None:
+        raise ValueError(
+            f"Actor {request.actor_id!r} is not reviewed in scenario {request.scenario_id!r}"
+        )
+    actor_kind, confidence = actor_profile
+    kind_adjustment = 0.1 if actor_kind == "cyclist" else 0.05 if actor_kind == "bus" else 0
+    review_uncertainty = (1 - confidence) * 0.22
+    baseline_risk = min(
+        0.96,
+        max(0.03, scenario["baseline_risk"] + kind_adjustment + review_uncertainty),
+    )
+
+    base_weights = {
+        "vehicle": [0.68, 0.22, 0.10],
+        "bus": [0.61, 0.30, 0.09],
+        "cyclist": [0.55, 0.30, 0.15],
+    }[actor_kind]
+    shift = {
+        "present": [0.0, 0.0, 0.0],
+        "shifted": [-0.10, 0.07, 0.03],
+        "removed": [-0.18, 0.12, 0.06],
+    }[request.intervention]
+    weights = [value + shift[index] for index, value in enumerate(base_weights)]
+    random_draw = _seeded_random(request.seed)
+    counts = [1, 1, 1]
+    for _ in range(request.samples):
+        draw = random_draw()
+        counts[0 if draw < weights[0] else 1 if draw < weights[0] + weights[1] else 2] += 1
+    labels = ["continue", "yield", "deviate"]
+    mode_probabilities = [
+        EvidenceModeProbability(
+            label=label,
+            probability=round(count / sum(counts), 6),
+        )
+        for label, count in zip(labels, counts, strict=True)
+    ]
+
+    sensitivity = 1.0 if actor_kind == "cyclist" else 0.85 if actor_kind == "bus" else 0.75
+    reduction = (
+        0.24 * sensitivity
+        if request.intervention == "shifted"
+        else 0.52 * sensitivity
+        if request.intervention == "removed"
+        else 0
+    )
+    counterfactual_risk = max(0.03, baseline_risk * (1 - reduction))
+    baseline_visibility = scenario["visibility"]
+    counterfactual_visibility = (
+        baseline_visibility + (1 - baseline_visibility) * 0.55
+        if request.intervention == "shifted"
+        else 0.99
+        if request.intervention == "removed"
+        else baseline_visibility
+    )
+    return EvidenceCounterfactualResponse(
+        scenario_id=request.scenario_id,
+        actor_id=request.actor_id,
+        actor_kind=actor_kind,
+        intervention=request.intervention,
+        deterministic_seed=request.seed,
+        sample_count=request.samples,
+        baseline_risk=round(baseline_risk, 3),
+        counterfactual_risk=round(counterfactual_risk, 3),
+        baseline_visibility=baseline_visibility,
+        counterfactual_visibility=round(counterfactual_visibility, 3),
+        mode_probabilities=mode_probabilities,
+        risk_delta=round(counterfactual_risk - baseline_risk, 3),
+        changed_variable=(
+            f"{request.scenario_id}:{request.actor_id}:"
+            f"visibility_context:{request.intervention}"
+        ),
+        controlled_variables=[
+            f"scenario:{request.scenario_id}",
+            f"actor:{request.actor_id}",
+            "reviewed track",
+            "source footage",
+            f"horizon_s:{request.horizon_s:g}",
+            f"samples:{request.samples}",
+            f"seed:{request.seed}",
+        ],
+    )

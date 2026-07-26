@@ -143,6 +143,81 @@ def test_obstruction_interventions_rerun_risk_monotonically() -> None:
     assert results["present"]["visibility"] < results["shifted"]["visibility"] < results["removed"]["visibility"]
 
 
+def test_evidence_counterfactual_binds_real_scenario_actor_and_intervention() -> None:
+    results = {}
+    for intervention in ("present", "shifted", "removed"):
+        response = client.post(
+            "/api/evidence-counterfactual",
+            json={
+                "scenario_id": "market",
+                "actor_id": "cyc-12",
+                "intervention": intervention,
+                "seed": 42,
+                "samples": 128,
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scenario_id"] == "market"
+        assert body["actor_id"] == "cyc-12"
+        assert body["actor_kind"] == "cyclist"
+        assert body["intervention"] == intervention
+        assert body["changed_variable"] == (
+            f"market:cyc-12:visibility_context:{intervention}"
+        )
+        assert "scenario:market" in body["controlled_variables"]
+        assert "actor:cyc-12" in body["controlled_variables"]
+        results[intervention] = body
+
+    assert (
+        results["present"]["counterfactual_risk"]
+        > results["shifted"]["counterfactual_risk"]
+        > results["removed"]["counterfactual_risk"]
+    )
+    assert (
+        results["present"]["counterfactual_visibility"]
+        < results["shifted"]["counterfactual_visibility"]
+        < results["removed"]["counterfactual_visibility"]
+    )
+    assert (
+        results["present"]["mode_probabilities"]
+        != results["removed"]["mode_probabilities"]
+    )
+
+
+def test_evidence_counterfactual_changes_with_actor_and_rejects_mismatch() -> None:
+    bus = client.post(
+        "/api/evidence-counterfactual",
+        json={
+            "scenario_id": "market",
+            "actor_id": "bus-38",
+            "intervention": "present",
+        },
+    )
+    cyclist = client.post(
+        "/api/evidence-counterfactual",
+        json={
+            "scenario_id": "market",
+            "actor_id": "cyc-12",
+            "intervention": "present",
+        },
+    )
+    assert bus.status_code == cyclist.status_code == 200
+    assert bus.json()["baseline_risk"] != cyclist.json()["baseline_risk"]
+    assert bus.json()["mode_probabilities"] != cyclist.json()["mode_probabilities"]
+
+    mismatch = client.post(
+        "/api/evidence-counterfactual",
+        json={
+            "scenario_id": "gaithersburg",
+            "actor_id": "cyc-12",
+            "intervention": "removed",
+        },
+    )
+    assert mismatch.status_code == 404
+    assert "not reviewed" in mismatch.json()["detail"]
+
+
 def test_validation_and_not_found() -> None:
     invalid = client.post("/api/forecast", json={"horizon_s": 20})
     assert invalid.status_code == 422
@@ -175,6 +250,12 @@ def test_openapi_exposes_typed_success_and_validation_contracts() -> None:
     assert "counterfactual_forecast" in counterfactual_schema["properties"]
     assert "baseline_forecast" in counterfactual_schema["properties"]
     assert "422" in schema["paths"]["/api/counterfactual"]["post"]["responses"]
+    evidence_schema = schema["components"]["schemas"][
+        "EvidenceCounterfactualResponse"
+    ]
+    assert "actor_id" in evidence_schema["properties"]
+    assert "mode_probabilities" in evidence_schema["properties"]
+    assert "422" in schema["paths"]["/api/evidence-counterfactual"]["post"]["responses"]
 
 
 def test_waymo_and_carla_adapter_seams_normalize_shared_contract() -> None:

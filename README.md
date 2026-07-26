@@ -1,291 +1,209 @@
-# Vector Field — Autonomous Motion Forecasting Laboratory
+# Vector Field — Real-World Motion Evidence Lab
 
-[![Live preview](https://img.shields.io/badge/live-preview-2ea44f?logo=github)](https://marinjursic.github.io/autonomous-motion-forecasting-lab/)
+[![Live preview](https://img.shields.io/badge/live-preview-e96832?logo=github)](https://marinjursic.github.io/autonomous-motion-forecasting-lab/)
 [![Preview status](https://github.com/MarinJursic/autonomous-motion-forecasting-lab/actions/workflows/pages.yml/badge.svg)](https://github.com/MarinJursic/autonomous-motion-forecasting-lab/actions/workflows/pages.yml)
 
-An interactive, dataset-free laboratory for inspecting multimodal motion forecasts, occupancy risk, occlusion uncertainty, and controlled counterfactuals in autonomous-driving scenes.
+Vector Field is a footage-first laboratory for reviewing motion tracks, multimodal forecasts, occupancy risk, visibility, calibration fixtures, and controlled counterfactuals. The default experience uses locally bundled, licensed real traffic video—not low-poly vehicles or a synthetic road scene.
 
-> **Portfolio research prototype, not a driving system.** The shipped model is a deterministic, auditable surrogate designed to demonstrate product and systems architecture without credentials, proprietary weights, or licensed datasets.
+> **Research interface, not a driving system.** The clips are real, while the reviewed boxes and tracks are demonstration annotations created for this repository. Forecast probabilities and metrics come from an auditable deterministic fixture, not a trained or safety-validated production model.
 
-## Continuous app walkthrough
+## Continuous application walkthrough
 
-[![Continuous app walkthrough: genuine Market Street footage, analytic twin, and counterfactual](docs/walkthrough/app-walkthrough.gif)](docs/walkthrough/app-walkthrough.mp4)
+[![Continuous walkthrough of the running motion evidence lab](docs/walkthrough/app-walkthrough.gif)](docs/walkthrough/app-walkthrough.mp4)
 
-[Watch or download the full-resolution MP4](docs/walkthrough/app-walkthrough.mp4) · [Open the poster frame](docs/walkthrough/app-walkthrough-poster.jpg)
+[Open the full-resolution MP4](docs/walkthrough/app-walkthrough.mp4) · [Open the poster frame](docs/walkthrough/app-walkthrough-poster.jpg)
 
-This is one continuous capture of the running application. It begins with genuine
-[Market Street traffic footage](https://commons.wikimedia.org/wiki/File:Street_traffic.webm)
-by `Editor` (CC BY 3.0), then enters the interactive Three.js analytic twin and runs
-the delivery-van counterfactual. The final comparison shows the forecast recomputed
-after removing the obstruction: pedestrian visibility changes from `31%` to `96%`
-and the demonstration collision-risk estimate changes from `77.1%` to `19.8%`.
-The street video supplies real-world visual context only; it is not represented as
-model input, tracked actors, or evaluation evidence.
+The walkthrough is one continuous recording of the running application. It reviews
+an aligned Gaithersburg actor while the source clip plays, runs a seeded
+visibility counterfactual, changes an evidence layer, moves through all three
+real-world scenarios, and demonstrates both themes. The footage plays continuously
+rather than being replaced by concept renders or spliced mock screens.
 
-## Why this exists
+## Three real-world scenarios
 
-Motion prediction is not “draw one future line.” A useful system must represent multiple plausible futures, interaction effects, uncertainty under occlusion, and whether its probabilities deserve trust. Vector Field turns those ideas into an explorable 3D product:
+| Scenario | What it shows | Source and license |
+|---|---|---|
+| **MD-355 / MD-124, Gaithersburg** | Fixed elevated four-way intersection, daylight, dense cross traffic | G. Edward Johnson · [CC BY 4.0](https://commons.wikimedia.org/wiki/File:MD-355_and_MD-124_Gaithersburg_MD_2022-07-30_11-07-03_1.webm) |
+| **Market Street, San Francisco** | Dense transit corridor with buses, cars, and a cyclist | Editor · [CC BY 3.0](https://commons.wikimedia.org/wiki/File:Street_traffic.webm) |
+| **Cologne, Germany** | Low-light signal approach with reviewed vehicle movements | Maximilian Schönherr · [CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Cars_Passing_by_at_Night.webm) |
 
-- a Three.js bird’s-eye urban replay with an ego vehicle, traffic, a cyclist, and a pedestrian;
-- wireframe detections, deterministic point returns, observed tracks, and typed lane/crosswalk/traffic-light map features;
-- API-driven multimodal future-trajectory probability tubes whose width and opacity encode covariance and probability;
-- visibility masks, occupancy-flow arrows, collision heatmaps, uncertainty entropy, and an OOD proxy;
-- clearly labeled synthetic evaluation fixtures: minADE, miss rate, ECE, Brier score, OOD AUROC, and latency;
-- a causal editor that holds actor intent and initial state fixed while moving or removing an obstruction;
-- a typed FastAPI service with deterministic graph/diffusion-inspired forecasts and tested Waymo/CARLA normalization boundaries.
+Each source was trimmed, resized to 1280×720, transcoded to a local 30 fps VP9 WebM, and paired with an HD poster. No cars, cyclists, buildings, or background content were generated or composited. Full attribution and transformation notes are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-The default story is intentionally legible in seconds: a pedestrian is hidden by a delivery van near a crosswalk. At forecast time `T₀ = 6.2 s`, the northbound ego vehicle and westbound pedestrian are both about 2.5 seconds from the same lane/crosswalk conflict point. With seed `42` and `128` samples, removing the van changes visibility from `31%` to `96%`; the bundled synthetic conflict model reruns the pedestrian modes and changes collision risk from `77.1%` to `19.8%`. These are deterministic demonstration outputs, not measured road-safety performance.
+Every checked-in track must remain attached to one visually identifiable road user across its full annotation window. The review pass intentionally removed a false Cologne cyclist track—the visible cargo bike was parked—and a Gaithersburg SUV track that crossed unrelated vehicles.
 
-## Product walkthrough
+## How the app works
 
-1. **Replay the scene.** Play, pause, scrub 12 seconds, and switch between `0.5×`, `1×`, and `2×`.
-2. **Inspect actors.** Select the ego vehicle, another vehicle, the pedestrian, or the cyclist in the scene or actor rail.
-3. **Interrogate the forecast.** Toggle probability tubes, occupancy risk, visibility/occlusion, and observed tracks.
-4. **Read uncertainty.** Compare future-mode probability, trajectory entropy, visibility, calibrated collision likelihood, and OOD score.
-5. **Run the counterfactual.** Choose “keep,” “shift 8m north,” or “remove,” then rerun 128 seeded mode allocations. The returned forecast replaces the scene’s tubes, risk, TTC, visibility, entropy, OOD proxy, and heatmap scale.
-6. **Compare evidence.** See the graph-diffusion surrogate against scene-transformer and constant-velocity synthetic fixtures without presenting them as benchmark results.
-7. **Change appearance.** Switch between persistent dark and light themes; the interface and the Three.js lighting, fog, road, buildings, markings, and sensor returns all change together.
+The center viewport is the evidence source of truth. `requestVideoFrameCallback` reads the actual decoded video clock, and the app interpolates reviewed track keyframes against that time. Scrubbing, looping, pausing, and playback-speed changes therefore keep boxes, observed trails, forecast branches, occupancy rings, frame numbers, and the actor inspector synchronized.
 
-Drag the 3D viewport to orbit, scroll to zoom, and click an actor to inspect it. Keyboard users can focus the viewport and use the arrow keys to change the selected actor; buttons, switches, timeline, and counterfactual dialog expose native focus states and labels.
+### Evidence controls
 
-The replay has an explicit temporal interpretation: `0–2.0 s` is a short pre-roll hold, `2.0–6.2 s` is observed approach history, `T₀ = 6.2 s` is the shared origin of every prediction tube, and the remaining timeline follows the highest-probability `continue` realization while the alternative fan stays anchored for comparison.
+- Switch among three real clips without leaving the review surface.
+- Play, pause, scrub with 10 ms precision, and cycle through `0.5×`, `1×`, and `1.5×`.
+- Select an actor in the frame or review rail; choosing an out-of-window actor seeks to its evidence interval.
+- Toggle reviewed detections, observed trails, future branches, conflict occupancy, and the visibility field independently.
+- Read frame number, active-track count, clip provenance, annotation confidence, and visibility context.
+- Change between persistent dark and light themes with accessible focus states and responsive layouts.
+- On narrow screens the evidence footage and transport appear before the review and forecast rails.
 
-### Reproducible analysis figures
+### Forecast controls
 
-`scripts/render_readme_media.py` can still generate engineering figures for local
-model inspection. Those artifacts are deliberately not embedded as app
-walkthroughs. The script imports the shipped Python engine, runs all three
-obstruction modes with seed `42` and `128` samples, and draws the returned
-probabilities, uncertainty, visibility, risk, and TTC:
+The selected actor receives three visual future modes:
 
-```bash
-backend/.venv/bin/python scripts/render_readme_media.py
+| Mode | Display |
+|---|---|
+| Continue | Solid orange branch |
+| Yield | Cyan dashed branch |
+| Deviate | Violet dotted branch |
+
+All branches begin at the same current-time track position. Their display is synchronized to the video and bounded to the reviewed annotation interval.
+
+### Counterfactual
+
+The controlled intervention changes one context variable:
+
+```text
+obstruction ∈ {present, shifted, removed}
 ```
+
+The active real scenario ID, selected reviewed actor ID, and intervention are all sent to the evidence endpoint. The reviewed track, source footage, horizon, seed (`42`), and sample count (`128`) remain fixed. Running the intervention calls the FastAPI engine when available and uses the byte-for-byte matching deterministic TypeScript fallback otherwise. The response drives the displayed risk, visibility, and mode probabilities; it is not discarded or replaced with a hard-coded UI value. The footage itself never changes.
+
+The app labels the result as a fixture. It does not imply that removing an obstruction from a mathematical scenario edits the real video or proves a safety outcome.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  A["Built-in scenario<br/>ENU · 10 Hz"] --> B["Typed FastAPI contract"]
-  W["Waymo adapter seam"] -.-> B
-  C["CARLA adapter seam"] -.-> B
-  B --> G["Graph interaction stage<br/>actor / map / visibility"]
-  G --> D["Seeded diffusion surrogate<br/>3 modes + covariance"]
-  D --> R["Risk + calibration + OOD"]
-  R --> U["Next.js client"]
-  U --> T["Three.js scene<br/>tracks · tubes · heatmap"]
-  U --> E["Counterfactual editor<br/>controlled scene intervention"]
+    A["Licensed real traffic clips"] --> B["30 fps local WebM"]
+    C["Reviewed annotation keyframes"] --> D["Time interpolation"]
+    B --> E["Decoded video clock"]
+    E --> D
+    D --> F["Boxes · trails · forecast branches · occupancy"]
+    F --> G["Next.js evidence workstation"]
+
+    H["FastAPI deterministic fixture"] --> G
+    I["TypeScript offline fallback"] --> G
+    G --> J["Controlled counterfactual"]
 ```
 
 | Layer | Responsibility |
-| --- | --- |
-| `app/components/SceneCanvas.tsx` | Three.js scene graph, point returns, detection boxes, map geometry, dynamic API trajectory tubes, occupancy flow, heatmap, occlusion, selection, orbit camera, GPU cleanup |
-| `app/components/MotionLab.tsx` | Replay state, accessible layer controls, API-backed evidence panels, selected-actor data, causal editor |
-| `app/lib/motion-domain.ts` | Shared browser contracts, strict HTTP error handling, deterministic offline forecast/counterfactual fallback |
+|---|---|
+| `app/components/MotionLab.tsx` | Video clock, transport, layers, actor review, inspector, themes, counterfactual interaction |
+| `app/lib/scenarios.ts` | Clip provenance, reviewed keyframes, bounded interpolation, observed and forecast paths |
+| `app/lib/motion-domain.ts` | Typed API client, deterministic forecast and counterfactual fallback |
+| `backend/app/engine.py` | Seeded multimodal allocation, covariance growth, risk fixture, synthetic metrics |
 | `backend/app/schemas.py` | Strict Pydantic request/response contracts |
-| `backend/app/engine.py` | Seeded multimodal sample allocation, covariance growth, transparent forecast-derived risk, synthetic metrics |
-| `backend/app/adapters.py` | Shared `ScenarioAdapter` boundary plus tested Waymo and CARLA normalized-mapping seams |
-| `backend/app/main.py` | FastAPI endpoints, validation, CORS, OpenAPI |
-
-### Forecast surrogate
-
-The bundled engine is intentionally transparent:
-
-1. A small interaction graph assigns extra uncertainty to actors near conflicts and to the hidden pedestrian.
-2. The requested sample count is allocated among three actor hypotheses with a seeded categorical sampler.
-3. Each mode creates a trajectory with curvature, speed scaling, and time-growing covariance.
-4. Smoothed empirical frequencies are normalized per actor and returned as mode probabilities.
-5. A documented logistic conflict function combines the pedestrian’s crossing probability and visibility to produce the scenario risk and expected time to collision.
-
-Each tube starts at its actor’s `T₀` pose. Segment radius grows with the square root of covariance trace, while opacity tracks mode probability. The occupancy field is centered on the tested lane/crosswalk conflict point and scales with returned collision risk.
-
-The Python API and TypeScript offline fallback use the same documented unsigned 32-bit seeded generator and categorical allocation. The same request therefore produces the same actor-mode allocation, risk, visibility, and TTC whether the API is connected or the browser is offline. Changing the seed or sample count changes the empirical allocation. This makes controlled comparisons reproducible; it does **not** make the surrogate learned or validated.
-
-## Counterfactual semantics
-
-The counterfactual changes one variable: `delivery_van ∈ {present, shifted, removed}`.
-
-Controlled variables are:
-
-- actor intent and starting pose;
-- velocity and map geometry;
-- weather and coordinate frame;
-- sampling seed (`42`);
-- number of mode samples (`128`).
-
-| Intervention | Pedestrian visibility | Collision risk | Expected TTC |
-| --- | ---: | ---: | ---: |
-| Van present | 31% | 77.1% | 1.84 s |
-| Shifted 8 m north | 72% | 42.5% | 4.60 s |
-| Removed | 96% | 19.8% | 6.42 s |
-
-The API returns both baseline and counterfactual `ForecastResponse` objects so clients can prove that trajectories and risk were recomputed instead of merely relabeling a cached score. The table is generated with the default seed/sample count and is not an empirical safety claim.
+| `backend/app/adapters.py` | Validated normalized mapping seams for separately obtained Waymo or CARLA input |
 
 ## Run locally
 
-### Prerequisites
-
-- Node.js `22.13+`
-- Python `3.11+`
-
-### 1. Install the web app
+Prerequisites: Node.js `22.13+` and Python `3.11+`.
 
 ```bash
 npm install
-```
-
-### 2. Create the API environment
-
-```bash
 python3 -m venv backend/.venv
 backend/.venv/bin/python -m pip install -r backend/requirements.txt
 ```
 
-### 3. Start both processes
-
-Terminal A:
+Start the optional API:
 
 ```bash
 npm run api
 ```
 
-Terminal B:
+Start the web application in another terminal:
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The OpenAPI explorer is at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
-
-If the API is unavailable, the UI remains fully explorable with its deterministic local story data and clearly labels itself `LOCAL ENGINE`. The fallback implements the same response shape and the same seeded allocation as Python.
+Open the URL printed by the development server. All video, track, layer, transport, scenario, source, and theme interactions work without the API. The counterfactual and evaluation panels use the matching local fixture when the API is unavailable.
 
 ## API
 
 | Method | Path | Purpose |
-| --- | --- | --- |
+|---|---|---|
 | `GET` | `/health` | Readiness and active engine |
-| `GET` | `/api/scenarios/{id}` | Typed actors, map features, coordinate frame |
-| `POST` | `/api/forecast` | Multimodal trajectories, covariance, entropy, OOD, risk |
-| `POST` | `/api/counterfactual` | Controlled intervention comparison with full baseline/counterfactual forecasts |
+| `GET` | `/api/scenarios/{id}` | Typed actors, map features, and coordinate frame |
+| `POST` | `/api/forecast` | Multimodal trajectories, covariance, entropy, OOD proxy, and risk fixture |
+| `POST` | `/api/evidence-counterfactual` | Active real clip + reviewed actor + controlled visibility intervention |
+| `POST` | `/api/counterfactual` | Legacy synthetic ENU adapter-fixture comparison |
 | `GET` | `/api/metrics` | Synthetic calibration, accuracy, OOD, and latency fixtures with provenance |
 
-Example:
+Example counterfactual:
 
 ```bash
-curl -s http://127.0.0.1:8000/api/forecast \
+curl -s http://127.0.0.1:8000/api/evidence-counterfactual \
   -H 'content-type: application/json' \
   -d '{
-    "scenario_id": "sf-market-0142",
-    "horizon_s": 8,
+    "scenario_id": "market",
+    "actor_id": "cyc-12",
+    "intervention": "removed",
+    "horizon_s": 3,
     "samples": 128,
-    "seed": 42,
-    "obstruction": "present"
-  }'
-```
-
-Counterfactual:
-
-```bash
-curl -s http://127.0.0.1:8000/api/counterfactual \
-  -H 'content-type: application/json' \
-  -d '{
-    "scenario_id": "sf-market-0142",
-    "obstruction": "removed",
     "seed": 42
   }'
 ```
 
-## Verification
+## Deterministic fixture
 
-Run the complete local gate:
+The bundled model remains intentionally inspectable:
+
+1. a small interaction stage raises uncertainty near conflict and occlusion;
+2. a seeded categorical sampler allocates the requested count across continue, yield, and deviate modes;
+3. trajectories receive curvature, speed scaling, and time-growing covariance;
+4. empirical frequencies are normalized into per-actor probabilities;
+5. a documented logistic fixture combines crossing probability and visibility into a scenario watch score.
+
+Python and TypeScript use the same unsigned 32-bit seeded generator and allocation rules. Identical inputs therefore return identical fixture outputs online and offline. Reproducibility is useful for interface and systems testing; it is not evidence of model accuracy.
+
+## Verification
 
 ```bash
 npm run verify
 ```
 
-The gate covers:
+The complete gate covers:
 
-- production frontend/worker build;
-- strict TypeScript checking;
-- server-rendered HTML and starter-code regression checks;
-- deterministic browser-domain, API-client body-consumption, HTTP-error, and intervention tests;
-- ESLint;
-- FastAPI endpoint, schema-validation, OpenAPI, deterministic sampling, covariance, counterfactual recomputation, metric-provenance, and adapter tests.
+- production application and worker build;
+- strict TypeScript and ESLint checks;
+- three local WebM files with valid EBML headers and 1280×720 posters;
+- track interpolation boundaries and common-origin multimodal forecasts;
+- synchronized video-clock, layer, timeline, source, theme, mobile-order, and counterfactual contracts;
+- selected scenario/actor/intervention binding, deterministic browser/API parity, and HTTP error handling;
+- FastAPI endpoints, schemas, OpenAPI, covariance, counterfactual recomputation, fixture provenance, and adapter validation.
 
-The Python test suite also runs independently with:
+The project currently includes twelve browser/domain contract tests and fifteen backend tests.
 
-```bash
-npm run test:api
-```
+## Accuracy boundaries
 
-## Dataset and simulator adapters
-
-The demo deliberately ships no third-party dataset samples.
-
-### Waymo Open Motion Dataset
-
-After separately installing Waymo’s official package and accepting its license, decode an official Scenario proto into the adapter’s dependency-free normalized mapping (`id`, `title`, `sample_hz`, typed `actors`, and typed `map_features`). `WaymoMotionAdapter.load()` validates that mapping into the shared ENU `Scenario` contract and raises `AdapterInputError` for unsupported or malformed input. The suite verifies the success and failure paths. Waymo reports motion segments with object trajectories, 3D maps, and vehicle/pedestrian/cyclist classes; its FAQ also warns that the data is not suitable for conclusions about a specific real vehicle’s behavior.
-
-### CARLA
-
-Convert a CARLA world snapshot—transform, bounding extent, velocity, visibility, map primitives—to the same normalized mapping before calling `CarlaAdapter.load()`. Because the forecasting core depends only on that validated contract, simulator scenarios and dataset replays can share the visualization and evaluation path without importing CARLA into the default demo.
-
-CARLA’s official convention is left-handed, with `+X` forward, `+Y` right, `+Z` up, meters, and degrees. The adapter boundary expects callers to convert those values into this project’s right-handed ENU mapping before validation; it does not silently relabel raw CARLA coordinates.
+- Real footage does not make the overlays benchmark ground truth. They are reviewed demonstration annotations.
+- Synthetic evaluation cards are clearly labeled and must not be compared with published model results.
+- The collision watch score is a transparent fixture, not a calibrated safety probability.
+- OOD is an interaction/visibility proxy, not a validated detector.
+- No control, planning, or actuation output is produced.
+- The adapter seams validate normalized mappings but do not redistribute Waymo data or bundle a running CARLA client.
+- Production use requires licensed data, evaluated perception and forecasting models, dataset split discipline, probability calibration, rare-event testing, and formal safety review.
 
 ## Research grounding
 
-- The [Waymo Open Dataset overview](https://waymo.com/open/about/) documents the motion dataset’s trajectories, 3D maps, 20-second 10 Hz segments, and vehicle/pedestrian/cyclist labels.
-- The [Waymo Open Motion Dataset paper](https://waymo.com/research/large-scale-interactive-motion-forecasting-for-autonomous-driving--the-waymo-open-motion-dataset/) motivates joint predictions for interactive scenarios rather than isolated single-actor forecasts.
-- Waymo’s [MotionDiffuser publication](https://waymo.com/research/motiondiffuser-controllable-multi-agent-motion-prediction-using-diffusion/) grounds the project’s multimodal, controllable-sampling product vocabulary; this repository implements only a transparent surrogate, not that trained model.
-- Waymo’s [challenge overview](https://waymo.com/open/challenges/) includes motion prediction, interaction prediction, simulation agents, and occupancy/flow evaluation tracks.
-- Waymo’s [official FAQ](https://waymo.com/open/faq/) states the license/distribution constraints and cautions against interpreting the dataset as evidence of a particular real vehicle’s behavior.
-- [CARLA’s coordinate documentation](https://carla.readthedocs.io/en/latest/coordinates/) defines its left-handed axes and unit conventions, which must be converted before crossing the ENU adapter boundary.
-- The [CARLA Python API](https://carla.readthedocs.io/en/latest/python_api/) documents snapshots, actor transforms and velocities, and bounding-box half-extents used by a production snapshot decoder.
-- The [Three.js `WebGLRenderer` documentation](https://threejs.org/docs/pages/WebGLRenderer.html) defines the WebGL 2 rendering surface used by the scene.
-- The [FastAPI documentation](https://fastapi.tiangolo.com/python-types/) explains the type-hint-based validation and generated OpenAPI contract used by the service.
-
-## What production work would add
-
-- learned weights trained and evaluated on licensed data;
-- map-aware vector encoders and joint scene transformers;
-- diffusion or flow-matching rollouts with measured probability calibration;
-- occupancy-flow labels and spatial IoU metrics;
-- conformal risk sets and calibration by actor class/region;
-- sensor-derived visibility rather than a story fixture;
-- dataset split discipline, rare-event stress tests, and formal safety review;
-- streaming Arrow/Parquet scenario payloads and GPU worker inference.
-
-## Limitations
-
-- Geometry is a synthetic story scene; it is not a Waymo sample or CARLA capture.
-- Forecast metrics are labeled portfolio fixtures, not published benchmark results.
-- Collision probability is a transparent scenario-specific logistic function of sampled crossing probability and visibility, not a safety guarantee.
-- The browser renderer favors interpretability over photorealism or sensor fidelity.
-- Point returns and detections are synthetic geometry, not outputs from a perception model.
-- OOD is a bounded interaction/occlusion proxy, not a validated detector.
-- The adapter seams validate normalized mappings but do not bundle licensed Waymo decoders or a running CARLA client.
-- No control/planning output is generated.
+- Waymo, [Open Motion Dataset](https://waymo.com/open/about/)
+- Waymo, [Large-scale interactive motion forecasting](https://waymo.com/research/large-scale-interactive-motion-forecasting-for-autonomous-driving--the-waymo-open-motion-dataset/)
+- Waymo, [MotionDiffuser](https://waymo.com/research/motiondiffuser-controllable-multi-agent-motion-prediction-using-diffusion/)
+- CARLA, [coordinate system documentation](https://carla.readthedocs.io/en/latest/coordinates/)
+- FastAPI, [type-driven validation](https://fastapi.tiangolo.com/python-types/)
+- MDN, [`requestVideoFrameCallback`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLVideoElement/requestVideoFrameCallback)
 
 ## Repository map
 
 ```text
-.
-├── app/
-│   ├── components/MotionLab.tsx
-│   ├── components/SceneCanvas.tsx
-│   ├── lib/motion-domain.ts
-│   ├── globals.css
-│   └── page.tsx
-├── backend/
-│   ├── app/{adapters,engine,main,schemas}.py
-│   ├── tests/test_api.py
-│   └── requirements.txt
-├── docs/media/
-├── docs/walkthrough/
-├── scripts/render_readme_media.py
-└── tests/rendered-html.test.mjs
+app/components/MotionLab.tsx  footage-first review workstation
+app/lib/scenarios.ts          real clips, provenance, tracks, interpolation
+app/lib/motion-domain.ts      typed fixture and API client
+backend/app/                  FastAPI schema, engine, endpoints, adapters
+public/scenarios/             three licensed real-world WebM clips and posters
+docs/walkthrough/             continuous MP4, GIF preview, and poster
+tests/                        video, interpolation, rendered-shell, and domain tests
+THIRD_PARTY_NOTICES.md        media attribution and transformation record
 ```
 
-## License
-
-This repository’s source is intended as a portfolio demonstration. Third-party projects and datasets retain their own licenses; no Waymo or CARLA data is redistributed here.
+The source code is governed by the repository license. Third-party traffic footage remains under the licenses recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

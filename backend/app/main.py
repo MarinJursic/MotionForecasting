@@ -4,11 +4,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .adapters import builtin_scenario
-from .engine import calibration_metrics, forecast
+from .engine import calibration_metrics, evidence_counterfactual, forecast
 from .schemas import (
     CalibrationMetrics,
     CounterfactualRequest,
     CounterfactualResponse,
+    EvidenceCounterfactualRequest,
+    EvidenceCounterfactualResponse,
     ForecastRequest,
     ForecastResponse,
     Scenario,
@@ -81,6 +83,19 @@ def create_counterfactual(request: CounterfactualRequest) -> CounterfactualRespo
             f"seed:{request.seed}",
         ],
     )
+
+
+@app.post(
+    "/api/evidence-counterfactual",
+    response_model=EvidenceCounterfactualResponse,
+)
+def create_evidence_counterfactual(
+    request: EvidenceCounterfactualRequest,
+) -> EvidenceCounterfactualResponse:
+    try:
+        return evidence_counterfactual(request)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @app.get("/api/metrics", response_model=list[CalibrationMetrics])

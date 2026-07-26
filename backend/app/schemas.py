@@ -117,6 +117,43 @@ class CounterfactualResponse(BaseModel):
     controlled_variables: list[str]
 
 
+EvidenceActorKind = Literal["vehicle", "bus", "cyclist"]
+
+
+class EvidenceCounterfactualRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scenario_id: Literal["gaithersburg", "market", "cologne"]
+    actor_id: str = Field(min_length=1)
+    intervention: ObstructionMode
+    seed: int = 42
+    horizon_s: float = Field(default=3.0, gt=0, le=6)
+    samples: int = Field(default=128, ge=8, le=1024)
+
+
+class EvidenceModeProbability(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    label: Literal["continue", "yield", "deviate"]
+    probability: float = Field(ge=0, le=1)
+
+
+class EvidenceCounterfactualResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scenario_id: str
+    actor_id: str
+    actor_kind: EvidenceActorKind
+    intervention: ObstructionMode
+    deterministic_seed: int
+    sample_count: int
+    baseline_risk: float = Field(ge=0, le=1)
+    counterfactual_risk: float = Field(ge=0, le=1)
+    baseline_visibility: float = Field(ge=0, le=1)
+    counterfactual_visibility: float = Field(ge=0, le=1)
+    mode_probabilities: list[EvidenceModeProbability]
+    risk_delta: float
+    changed_variable: str
+    controlled_variables: list[str]
+
+
 class CalibrationMetrics(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: str

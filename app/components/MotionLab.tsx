@@ -1,375 +1,552 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalibrationMetric,
-  createLocalCounterfactual,
-  createLocalForecast,
-  fetchCounterfactual,
-  fetchForecast,
+  createLocalEvidenceCounterfactual,
+  fetchEvidenceCounterfactual,
   fetchMetrics,
   localCalibrationMetrics,
   ObstructionMode,
 } from "../lib/motion-domain";
-import { LayerState, SceneCanvas } from "./SceneCanvas";
+import {
+  forecastPaths,
+  formatScenarioTime,
+  interpolateActor,
+  observedPath,
+  REAL_SCENARIOS,
+} from "../lib/scenarios";
 
 type Theme = "dark" | "light";
-
-const ACTORS = [
-  { id: "ego-01", type: "Ego vehicle", color: "white", speed: "9.8 m/s", uncertainty: "0.08" },
-  { id: "veh-27", type: "Vehicle", color: "blue", speed: "7.1 m/s", uncertainty: "0.16" },
-  { id: "ped-04", type: "Pedestrian", color: "amber", speed: "1.4 m/s", uncertainty: "0.41" },
-  { id: "cyc-09", type: "Cyclist", color: "lime", speed: "4.2 m/s", uncertainty: "0.23" },
-];
+type LayerKey = "detections" | "tracks" | "forecast" | "occupancy" | "visibility";
 
 const API_URL = process.env.NEXT_PUBLIC_MOTION_API_URL ?? "http://127.0.0.1:8000";
+const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const SPEEDS = [0.5, 1, 1.5];
 
-const actorVisibility: Record<string, number> = {
-  "ego-01": 1,
-  "veh-27": 0.96,
-  "cyc-09": 0.83,
+const LAYER_LABELS: Record<LayerKey, { label: string; detail: string }> = {
+  detections: { label: "Reviewed detections", detail: "Frame-aligned boxes" },
+  tracks: { label: "Observed trails", detail: "Annotated history" },
+  forecast: { label: "Forecast branches", detail: "Continue · yield · deviate" },
+  occupancy: { label: "Conflict occupancy", detail: "Selected interaction zone" },
+  visibility: { label: "Visibility field", detail: "Scene-level evidence mask" },
 };
 
-function modelLabel(model: string) {
-  if (model.startsWith("graph-diffusion")) return "Graph diffusion";
-  if (model.startsWith("scene-transformer")) return "Scene transformer";
-  if (model === "constant-velocity") return "Constant velocity";
-  return model;
+function interventionLabel(mode: ObstructionMode) {
+  if (mode === "shifted") return "Context shifted";
+  if (mode === "removed") return "Context removed";
+  return "Observed context";
 }
 
 export function MotionLab() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const frameCallbackRef = useRef<number | null>(null);
   const [theme, setTheme] = useState<Theme>("dark");
-  const [time, setTime] = useState(6.2);
+  const [scenarioIndex, setScenarioIndex] = useState(0);
+  const scenario = REAL_SCENARIOS[scenarioIndex];
+  const [time, setTime] = useState(scenario.defaultTime);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
-  const [selectedActor, setSelectedActor] = useState("ped-04");
-  const [obstruction, setObstruction] = useState<ObstructionMode>("present");
-  const [draftObstruction, setDraftObstruction] = useState<ObstructionMode>("present");
-  const [counterfactualOpen, setCounterfactualOpen] = useState(false);
-  const [counterfactualRunning, setCounterfactualRunning] = useState(false);
-  const [layers, setLayers] = useState<LayerState>({
+  const [selectedActor, setSelectedActor] = useState("veh-204");
+  const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
     detections: true,
-    trajectories: true,
-    occupancy: true,
-    occlusion: true,
     tracks: true,
+    forecast: true,
+    occupancy: true,
+    visibility: true,
   });
-  const [forecast, setForecast] = useState(() => createLocalForecast("present"));
   const [metrics, setMetrics] = useState<CalibrationMetric[]>(localCalibrationMetrics);
   const [apiStatus, setApiStatus] = useState<"checking" | "connected" | "local">("checking");
-  const [toast, setToast] = useState("");
-  const [showStreetReference, setShowStreetReference] = useState(false);
+  const [counterfactualOpen, setCounterfactualOpen] = useState(false);
+  const [counterfactualRunning, setCounterfactualRunning] = useState(false);
+  const [obstruction, setObstruction] = useState<ObstructionMode>("present");
+  const [draftObstruction, setDraftObstruction] = useState<ObstructionMode>("present");
+  const [evidenceResult, setEvidenceResult] = useState(
+    () => createLocalEvidenceCounterfactual(scenario.id, "veh-204", "present"),
+  );
+  const [notice, setNotice] = useState("Reviewed demonstration annotations · select any visible actor");
 
   useEffect(() => {
     const stored = window.localStorage.getItem("vector-field-theme");
     const preferred: Theme = stored === "light" || stored === "dark"
       ? stored
-      : window.matchMedia("(prefers-color-scheme: light)").matches
-        ? "light"
-        : "dark";
-    setTheme(preferred);
+      : window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     document.documentElement.dataset.theme = preferred;
+    const frame = window.requestAnimationFrame(() => setTheme(preferred));
+    return () => window.cancelAnimationFrame(frame);
   }, []);
-
-  const toggleTheme = () => {
-    const nextTheme: Theme = theme === "dark" ? "light" : "dark";
-    setTheme(nextTheme);
-    document.documentElement.dataset.theme = nextTheme;
-    window.localStorage.setItem("vector-field-theme", nextTheme);
-  };
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      if (playing) setTime((value) => (value + 0.08 * speed) % 12);
-    }, 80);
-    return () => window.clearInterval(interval);
-  }, [playing, speed]);
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([
-      fetchForecast(API_URL, "present", controller.signal),
-      fetchMetrics(API_URL, controller.signal),
-    ])
-      .then(([nextForecast, nextMetrics]) => {
-        setForecast(nextForecast);
+    fetchMetrics(API_URL, controller.signal)
+      .then((nextMetrics) => {
         setMetrics(nextMetrics);
         setApiStatus("connected");
       })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        console.info("Motion API unavailable; using the deterministic local fallback.", error);
-        setApiStatus("local");
+      .catch(() => {
+        if (!controller.signal.aborted) setApiStatus("local");
       });
     return () => controller.abort();
   }, []);
 
-  const actor = useMemo(() => ACTORS.find((item) => item.id === selectedActor) ?? ACTORS[2], [selectedActor]);
-  const actorForecast = useMemo(
-    () => forecast.forecasts.find((item) => item.actor_id === selectedActor) ?? forecast.forecasts[2],
-    [forecast, selectedActor],
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
+    video.src = `${PUBLIC_BASE_PATH}${scenario.video}`;
+    video.poster = `${PUBLIC_BASE_PATH}${scenario.poster}`;
+    video.load();
+    video.currentTime = scenario.defaultTime;
+    video.playbackRate = 1;
+    void video.play().catch(() => setPlaying(false));
+  }, [scenario]);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.playbackRate = speed;
+  }, [speed]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || typeof video.requestVideoFrameCallback !== "function") return;
+    const update = () => {
+      setTime(video.currentTime);
+      frameCallbackRef.current = video.requestVideoFrameCallback(update);
+    };
+    frameCallbackRef.current = video.requestVideoFrameCallback(update);
+    return () => {
+      if (frameCallbackRef.current !== null) video.cancelVideoFrameCallback(frameCallbackRef.current);
+      frameCallbackRef.current = null;
+    };
+  }, [scenario]);
+
+  const activeActors = useMemo(
+    () => scenario.actors.flatMap((actor) => {
+      const current = interpolateActor(actor, time);
+      return current ? [current] : [];
+    }),
+    [scenario, time],
   );
-  const risk = forecast.risk;
-  const visibility = selectedActor === "ped-04" ? risk.visibility : actorVisibility[selectedActor] ?? 1;
+  const selectedTrack = useMemo(
+    () => scenario.actors.find((actor) => actor.id === selectedActor) ?? scenario.actors[0],
+    [scenario, selectedActor],
+  );
+  const selectedPosition = useMemo(() => interpolateActor(selectedTrack, time), [selectedTrack, time]);
+  const selectedForecasts = useMemo(() => forecastPaths(selectedTrack, time), [selectedTrack, time]);
+  const draftEvidenceResult = useMemo(
+    () => createLocalEvidenceCounterfactual(scenario.id, selectedTrack.id, draftObstruction),
+    [draftObstruction, scenario.id, selectedTrack.id],
+  );
+  const probabilities = evidenceResult.mode_probabilities.map((mode) => mode.probability);
+  const risk = evidenceResult.counterfactual_risk;
 
-  const toggleLayer = useCallback((key: keyof LayerState) => {
+  const toggleTheme = () => {
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+    window.localStorage.setItem("vector-field-theme", next);
+  };
+
+  const toggleLayer = (key: LayerKey) => {
     setLayers((current) => ({ ...current, [key]: !current[key] }));
-  }, []);
+  };
 
-  const openCounterfactual = () => {
-    setDraftObstruction(obstruction);
-    setCounterfactualOpen(true);
+  const togglePlayback = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) void video.play();
+    else video.pause();
+  };
+
+  const cycleSpeed = () => {
+    const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+    setSpeed(next);
+    if (videoRef.current) videoRef.current.playbackRate = next;
+  };
+
+  const seek = (nextTime: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = nextTime;
+    setTime(nextTime);
+  };
+
+  const selectEvidenceActor = (actorId: string) => {
+    setSelectedActor(actorId);
+    setEvidenceResult(createLocalEvidenceCounterfactual(scenario.id, actorId, obstruction));
+    setNotice(`${scenario.code} · ${actorId} selected for evidence review`);
+  };
+
+  const chooseScenario = (index: number) => {
+    const nextScenario = REAL_SCENARIOS[index];
+    const initialActor = nextScenario.actors.find((actor) => interpolateActor(actor, nextScenario.defaultTime)) ?? nextScenario.actors[0];
+    setTime(nextScenario.defaultTime);
+    setPlaying(true);
+    setSpeed(1);
+    setObstruction("present");
+    setDraftObstruction("present");
+    setSelectedActor(initialActor.id);
+    setEvidenceResult(createLocalEvidenceCounterfactual(nextScenario.id, initialActor.id, "present"));
+    setScenarioIndex(index);
+    setNotice(`Opening ${nextScenario.location} evidence clip`);
+    if (index === scenarioIndex && videoRef.current) {
+      videoRef.current.currentTime = nextScenario.defaultTime;
+      void videoRef.current.play().catch(() => setPlaying(false));
+    }
   };
 
   const runCounterfactual = async () => {
     setCounterfactualRunning(true);
     try {
-      const response = await fetchCounterfactual(API_URL, draftObstruction);
-      setForecast(response.counterfactual_forecast);
+      const response = await fetchEvidenceCounterfactual(
+        API_URL,
+        scenario.id,
+        selectedTrack.id,
+        draftObstruction,
+      );
+      setEvidenceResult(response);
       setApiStatus("connected");
-      setToast(`API counterfactual complete · ${response.counterfactual_forecast.sample_count} seeded samples`);
-    } catch (error) {
-      console.info("Counterfactual API unavailable; rerunning the bundled fallback.", error);
-      const response = createLocalCounterfactual(draftObstruction);
-      setForecast(response.counterfactual_forecast);
+      setNotice(
+        `${response.scenario_id} · ${response.actor_id} · ${response.intervention} · ${response.sample_count} samples`,
+      );
+    } catch {
+      const response = createLocalEvidenceCounterfactual(
+        scenario.id,
+        selectedTrack.id,
+        draftObstruction,
+      );
+      setEvidenceResult(response);
       setApiStatus("local");
-      setToast(`Local counterfactual complete · ${response.counterfactual_forecast.sample_count} seeded samples`);
+      setNotice(
+        `Local ${response.scenario_id} · ${response.actor_id} · ${response.intervention} · ${response.sample_count} samples`,
+      );
     } finally {
       setObstruction(draftObstruction);
-      setPlaying(false);
-      setTime(6.2);
       setCounterfactualRunning(false);
       setCounterfactualOpen(false);
-      window.setTimeout(() => setToast(""), 3200);
     }
   };
 
   return (
-    <main>
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label="Vector Field home">
-          <span className="brand-mark"><i /><i /><i /></span>
-          <span><b>VECTOR FIELD</b><small>AUTONOMOUS MOTION LAB</small></span>
+    <main className="motion-workstation" id="top">
+      <header className="evidence-header">
+        <a className="evidence-brand" href="#top" aria-label="Vector Field home">
+          <span>VF</span>
+          <div><strong>Vector Field</strong><small>Motion evidence lab</small></div>
         </a>
-        <div className="scenario-meta">
-          <span className="status-pill"><i /> STORY MODE</span>
-          <div><small>SCENARIO</small><strong>SF–MARKET–0142</strong></div>
-          <div className="wide-only"><small>CONTEXT</small><strong>Urban · dusk · occluded</strong></div>
-        </div>
-        <div className="header-actions">
-          <span className={`api-status ${apiStatus}`}><i />{apiStatus === "connected" ? "API LIVE" : apiStatus === "local" ? "LOCAL ENGINE" : "CONNECTING"}</span>
-          <button
-            className="theme-toggle"
-            type="button"
-            onClick={toggleTheme}
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-            aria-pressed={theme === "light"}
-            title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-          >
-            <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
-            {theme === "dark" ? "LIGHT" : "DARK"}
+        <nav className="scenario-tabs" aria-label="Real-world scenarios">
+          {REAL_SCENARIOS.map((item, index) => (
+            <button
+              type="button"
+              key={item.id}
+              className={scenarioIndex === index ? "active" : ""}
+              aria-pressed={scenarioIndex === index}
+              onClick={() => chooseScenario(index)}
+            >
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <strong>{item.location.split(",")[0]}</strong>
+            </button>
+          ))}
+        </nav>
+        <div className="evidence-actions">
+          <span className={`engine-state ${apiStatus}`}><i />{apiStatus === "connected" ? "API evidence" : apiStatus === "local" ? "Local fallback" : "Checking engine"}</span>
+          <button type="button" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
+            {theme === "dark" ? "Light" : "Dark"}
           </button>
-          <button
-            className={`reference-toggle ${showStreetReference ? "active" : ""}`}
-            type="button"
-            onClick={() => setShowStreetReference((shown) => !shown)}
-            aria-pressed={showStreetReference}
-          >
-            {showStreetReference ? "ANALYTIC TWIN" : "REAL STREET VIDEO"}
-          </button>
-          <a href="https://github.com/waymo-research/waymo-open-dataset" target="_blank" rel="noreferrer">DATA ADAPTER ↗</a>
         </div>
       </header>
 
-      <section className="workspace" id="top">
-        <aside className="left-rail panel">
-          <div className="panel-heading"><span>SCENE ACTORS</span><small>04 TRACKED</small></div>
-          <div className="actor-list">
-            {ACTORS.map((item) => (
-              <button
-                key={item.id}
-                className={`actor-row ${selectedActor === item.id ? "active" : ""}`}
-                onClick={() => setSelectedActor(item.id)}
-                aria-pressed={selectedActor === item.id}
-              >
-                <span className={`actor-dot ${item.color}`} />
-                <span><strong>{item.id}</strong><small>{item.type}</small></span>
-                <em>{item.speed}</em>
-              </button>
-            ))}
-          </div>
-          <div className="divider" />
-          <div className="panel-heading"><span>VISUAL LAYERS</span><small>{Object.values(layers).filter(Boolean).length} / 5</small></div>
-          <div className="layer-list">
-            {(Object.keys(layers) as Array<keyof LayerState>).map((key) => (
+      <section className="evidence-grid">
+        <aside className="review-rail" aria-label="Review controls">
+          <section>
+            <header><span>Evidence clip</span><b>0{scenarioIndex + 1} / 03</b></header>
+            <p className="scenario-code">{scenario.code}</p>
+            <h1>{scenario.title}</h1>
+            <p className="scenario-context">{scenario.context}</p>
+            <dl className="clip-facts">
+              <div><dt>Location</dt><dd>{scenario.location}</dd></div>
+              <div><dt>Observed</dt><dd>{scenario.date}</dd></div>
+              <div><dt>Clip</dt><dd>{scenario.duration}s · 30 fps</dd></div>
+            </dl>
+          </section>
+
+          <section className="actor-review">
+            <header><span>Reviewed tracks</span><b>{scenario.actors.length}</b></header>
+            <div>
+              {scenario.actors.map((actor) => {
+                const active = Boolean(interpolateActor(actor, time));
+                return (
+                  <button
+                    type="button"
+                    key={actor.id}
+                    className={`${selectedActor === actor.id ? "active" : ""} ${active ? "in-frame" : ""}`}
+                    onClick={() => {
+                      selectEvidenceActor(actor.id);
+                      const first = actor.keyframes[0].t;
+                      const last = actor.keyframes.at(-1)!.t;
+                      if (time < first || time > last) seek((first + last) / 2);
+                    }}
+                  >
+                    <i className={actor.color} />
+                    <span><strong>{actor.id}</strong><small>{actor.label}</small></span>
+                    <em>{active ? "LIVE" : "SEEK"}</em>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="layer-review">
+            <header><span>Evidence layers</span><b>{Object.values(layers).filter(Boolean).length} / 5</b></header>
+            {Object.entries(LAYER_LABELS).map(([key, item]) => (
               <label key={key}>
-                <span>{key === "detections" ? "Detections + points" : key === "trajectories" ? "Probability tubes" : key === "occupancy" ? "Occupancy + collision" : key === "occlusion" ? "Visibility mask" : "Observed tracks"}</span>
-                <input type="checkbox" checked={layers[key]} onChange={() => toggleLayer(key)} />
-                <i />
+                <span><strong>{item.label}</strong><small>{item.detail}</small></span>
+                <input
+                  type="checkbox"
+                  checked={layers[key as LayerKey]}
+                  onChange={() => toggleLayer(key as LayerKey)}
+                />
               </label>
             ))}
-          </div>
-          <div className="legend-block">
-            <span>FORECAST HORIZON</span>
-            <div className="gradient-bar" />
-            <div><small>NOW</small><small>+3s</small><small>+8s</small></div>
-          </div>
+          </section>
         </aside>
 
-        <section className="viewport-panel">
-          <div className={`analytic-scene ${showStreetReference ? "hidden" : ""}`}>
-            <SceneCanvas
-              time={time}
-              obstruction={obstruction}
-              layers={layers}
-              forecasts={forecast.forecasts}
-              risk={risk}
-              selectedActor={selectedActor}
-              onSelectActor={setSelectedActor}
-              theme={theme}
-            />
-          </div>
-          <div className={`street-reference ${showStreetReference ? "visible" : ""}`} aria-hidden={!showStreetReference}>
-            {showStreetReference && (
-              <video autoPlay muted loop playsInline preload="metadata">
-                <source
-                  src="https://commons.wikimedia.org/wiki/Special:Redirect/file/Street%20traffic.webm"
-                  type="video/webm"
+        <section className="video-bay" aria-label="Synchronized real-world motion evidence">
+          <video
+            ref={videoRef}
+            muted
+            loop
+            playsInline
+            preload="auto"
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onTimeUpdate={(event) => setTime(event.currentTarget.currentTime)}
+            onError={() => setNotice("The local evidence clip could not be opened")}
+          />
+          <div className="video-grade" aria-hidden="true" />
+          {layers.visibility && <div className="visibility-field" aria-hidden="true" />}
+
+          <svg
+            className="evidence-overlay"
+            viewBox="0 0 100 56.25"
+            preserveAspectRatio="none"
+            aria-label="Reviewed tracks and forecast overlay"
+          >
+            <defs>
+              <filter id="soft-glow">
+                <feGaussianBlur stdDeviation="0.32" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+            </defs>
+            {layers.tracks && scenario.actors.map((actor) => (
+              <polyline
+                key={`track-${actor.id}`}
+                className={`observed-track ${actor.color} ${selectedActor === actor.id ? "selected" : ""}`}
+                points={observedPath(actor)}
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+            {layers.occupancy && selectedPosition && (
+              <>
+                <ellipse
+                  className="occupancy-ring outer"
+                  cx={selectedPosition.x + selectedPosition.w / 2}
+                  cy={selectedPosition.y + selectedPosition.h}
+                  rx={selectedPosition.w * 1.45}
+                  ry={selectedPosition.h * 0.72}
+                  vectorEffect="non-scaling-stroke"
                 />
-              </video>
+                <ellipse
+                  className="occupancy-ring inner"
+                  cx={selectedPosition.x + selectedPosition.w / 2}
+                  cy={selectedPosition.y + selectedPosition.h}
+                  rx={selectedPosition.w * 0.82}
+                  ry={selectedPosition.h * 0.42}
+                  vectorEffect="non-scaling-stroke"
+                />
+              </>
             )}
-            <div className="reference-shade" />
-            <div className="reference-caption">
-              <span>REAL-WORLD VISUAL REFERENCE</span>
-              <strong>Market Street · San Francisco</strong>
-              <small>Context footage only · not model input or tracking evidence</small>
-              <a
-                href="https://commons.wikimedia.org/wiki/File:Street_traffic.webm"
-                target="_blank"
-                rel="noreferrer"
+            {layers.forecast && selectedForecasts.map((forecast, index) => (
+              <polyline
+                key={forecast.label}
+                className={`forecast-line mode-${index}`}
+                points={forecast.points.map((point) => `${point.x},${point.y}`).join(" ")}
+                vectorEffect="non-scaling-stroke"
+                filter="url(#soft-glow)"
+              />
+            ))}
+            {layers.detections && activeActors.map((actor) => (
+              <g
+                key={actor.id}
+                className={`detection ${actor.color} ${selectedActor === actor.id ? "selected" : ""}`}
+                onClick={() => selectEvidenceActor(actor.id)}
               >
-                Editor · CC BY 3.0 ↗
-              </a>
-            </div>
+                <rect x={actor.x} y={actor.y} width={actor.w} height={actor.h} vectorEffect="non-scaling-stroke" />
+                <path
+                  d={`M${actor.x},${actor.y + 1.8}V${actor.y}H${actor.x + 2.4} M${actor.x + actor.w - 2.4},${actor.y}H${actor.x + actor.w}V${actor.y + 1.8}`}
+                  vectorEffect="non-scaling-stroke"
+                />
+                <text x={actor.x} y={Math.max(2, actor.y - 0.8)}>{actor.id} · {Math.round(actor.confidence * 100)}</text>
+              </g>
+            ))}
+          </svg>
+
+          <div className="clip-heading">
+            <span>REAL-WORLD EVIDENCE · {scenario.code}</span>
+            <strong>{scenario.location}</strong>
+            <small>Footage first · reviewed demonstration annotations · no synthetic vehicles</small>
           </div>
-          <div className="view-badge">
-            {showStreetReference ? "REFERENCE FOOTAGE · 1920 × 1080" : "BIRD’S-EYE ANALYTIC TWIN · 42 M AGL"}
-          </div>
-          <div className="scene-title">
-            <span>{showStreetReference ? "REAL STREET CONTEXT" : "INTERSECTION 04 / NORTHBOUND"}</span>
-            <strong>{showStreetReference ? "Observed traffic · no synthetic actors" : "Occluded crosswalk emergence"}</strong>
-          </div>
-          {!showStreetReference && <div className="model-chip">
+
+          <div className="frame-readout">
+            <span>FRAME {String(Math.floor(time * 30)).padStart(4, "0")}</span>
             <i />
-            <span><small>ACTIVE MODEL · {forecast.sample_count} SAMPLES</small><strong>{modelLabel(forecast.model).toUpperCase()}</strong></span>
-            <em>{forecast.latency_ms ? `${forecast.latency_ms}ms` : "local"}</em>
-          </div>}
-          {!showStreetReference && <div className="risk-callout">
-            <span className="crosshair" />
-            <div><small>PEDESTRIAN CONFLICT</small><strong>{Math.round(risk.collision_probability * 100)}% risk</strong><em>TTC {risk.expected_ttc_s.toFixed(1)}s</em></div>
-          </div>}
-          {!showStreetReference && <div className="orientation"><span>N</span><i /><small>ORBIT ENABLED</small></div>}
-          {!showStreetReference && <div className="timeline">
-            <button onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pause replay" : "Play replay"}>{playing ? "Ⅱ" : "▶"}</button>
-            <span className="timecode">00:{time.toFixed(1).padStart(4, "0")}</span>
+            <span>{activeActors.length} ACTIVE TRACKS</span>
+            <i />
+            <span>{scenario.visibility >= 0.8 ? "CLEAR" : scenario.visibility >= 0.6 ? "PARTIAL" : "LOW-LIGHT"} VISIBILITY</span>
+          </div>
+
+          {selectedPosition && (
+            <button
+              type="button"
+              className="actor-callout"
+              style={{
+                left: `${Math.min(82, selectedPosition.x + selectedPosition.w + 1)}%`,
+                top: `${Math.min(76, (selectedPosition.y / 56.25) * 100)}%`,
+              }}
+              onClick={() => setCounterfactualOpen(true)}
+            >
+              <small>SELECTED · {selectedTrack.kind.toUpperCase()}</small>
+              <strong>{selectedTrack.id}</strong>
+              <span>{Math.round(risk * 100)}% interaction watch · inspect ↗</span>
+            </button>
+          )}
+
+          <div className="transport">
+            <button type="button" onClick={togglePlayback} aria-label={playing ? "Pause evidence clip" : "Play evidence clip"}>
+              {playing ? "Ⅱ" : "▶"}
+            </button>
+            <span>{formatScenarioTime(time)}</span>
             <input
-              aria-label="Scenario time"
+              aria-label="Evidence time"
               type="range"
               min="0"
-              max="12"
-              step="0.1"
-              value={time}
-              onChange={(event) => { setTime(Number(event.target.value)); setPlaying(false); }}
+              max={scenario.duration}
+              step="0.01"
+              value={Math.min(time, scenario.duration)}
+              onChange={(event) => seek(Number(event.target.value))}
             />
-            {[0.5, 1, 2].map((item) => (
-              <button key={item} className={speed === item ? "active" : ""} aria-pressed={speed === item} onClick={() => setSpeed(item)}>{item}×</button>
-            ))}
-          </div>}
+            <span>{formatScenarioTime(scenario.duration)}</span>
+            <button type="button" onClick={cycleSpeed} aria-label="Change playback speed">{speed}×</button>
+          </div>
+
+          <div className="evidence-notice" role="status" aria-live="polite">{notice}</div>
         </section>
 
-        <aside className="right-rail panel">
-          <div className="panel-heading"><span>SELECTED ACTOR</span><small>{actor.id}</small></div>
-          <div className="actor-card">
-            <span className={`actor-avatar ${actor.color}`}>{actor.type === "Pedestrian" ? "P" : actor.type === "Cyclist" ? "C" : "V"}</span>
-            <div><strong>{actor.type}</strong><small>Track age 4.8s · {actor.speed}</small></div>
-          </div>
-          <div className="metric-pair">
-            <div><small>UNCERTAINTY</small><strong>{actorForecast.entropy.toFixed(2)}</strong><em>mode entropy</em></div>
-            <div><small>VISIBILITY</small><strong>{Math.round(visibility * 100)}%</strong><em>{visibility < 0.5 ? "occluded" : "visible"}</em></div>
-          </div>
-          <div className="distribution">
-            <div className="panel-heading"><span>FUTURE MODES</span><small>8 SEC</small></div>
-            {actorForecast.modes.map((mode, index) => (
-              <div className="mode-row" key={mode.label}>
-                <span><i className={index === 0 ? "mode-a" : index === 1 ? "mode-b" : "mode-c"} />{mode.label}</span>
-                <div><b style={{ width: `${mode.probability * 100}%` }} /></div>
-                <em>{mode.probability.toFixed(2)}</em>
+        <aside className="forecast-rail" aria-label="Forecast inspector">
+          <section className="selected-record">
+            <header><span>Selected record</span><b className={selectedTrack.color} /></header>
+            <p>{selectedTrack.id}</p>
+            <h2>{selectedTrack.label}</h2>
+            <dl>
+              <div><dt>Type</dt><dd>{selectedTrack.kind}</dd></div>
+              <div><dt>Review confidence</dt><dd>{Math.round(selectedTrack.confidence * 100)}%</dd></div>
+              <div><dt>Frame status</dt><dd>{selectedPosition ? "visible" : "outside window"}</dd></div>
+              <div><dt>Visibility</dt><dd>{Math.round(evidenceResult.counterfactual_visibility * 100)}%</dd></div>
+            </dl>
+          </section>
+
+          <section className="risk-record">
+            <header><span>Interaction watch</span><b>{Math.round(risk * 100)}</b></header>
+            <div className="risk-meter"><i style={{ width: `${risk * 100}%` }} /></div>
+            <p>{interventionLabel(obstruction)} · {evidenceResult.scenario_id} / {evidenceResult.actor_id} · deterministic {evidenceResult.sample_count}-sample fixture</p>
+          </section>
+
+          <section className="mode-record">
+            <header><span>Future modes</span><b>+3.0s</b></header>
+            {["Continue", "Yield", "Deviate"].map((label, index) => (
+              <div key={label}>
+                <span><i className={`mode-${index}`} />{label}</span>
+                <em><b style={{ width: `${probabilities[index] * 100}%` }} /></em>
+                <strong>{Math.round(probabilities[index] * 100)}%</strong>
               </div>
             ))}
-          </div>
-          <div className="risk-summary">
-            <div className="gauge" style={{ "--risk": `${risk.collision_probability * 100}%` } as React.CSSProperties}><span>{Math.round(risk.collision_probability * 100)}</span><small>RISK</small></div>
-            <div><small>COLLISION LIKELIHOOD</small><strong>{risk.severity.toUpperCase()}</strong><em>Deterministic synthetic conflict model</em></div>
-          </div>
-          <button className="counterfactual-button" onClick={openCounterfactual}>
-            <span>⌁</span><div><strong>RUN COUNTERFACTUAL</strong><small>Move or remove obstruction</small></div><em>→</em>
+          </section>
+
+          <button type="button" className="counterfactual-button" onClick={() => {
+            setDraftObstruction(obstruction);
+            setCounterfactualOpen(true);
+          }}>
+            <span>Run counterfactual</span>
+            <small>Control one context variable →</small>
           </button>
+
+          <section className="source-record">
+            <span>Footage provenance</span>
+            <strong>{scenario.creator}</strong>
+            <a href={scenario.sourceUrl} target="_blank" rel="noreferrer">{scenario.license} · source ↗</a>
+          </section>
         </aside>
       </section>
 
-      <section className="evidence-strip">
-        <div className="evidence-title"><small>SYNTHETIC EVAL FIXTURE</small><strong>Accuracy · calibration · latency</strong></div>
-        {metrics.map((row, index) => (
-          <div className={`model-row ${index === 0 ? "active" : ""}`} key={row.model}>
-            <span>{index === 0 && <i />}{modelLabel(row.model)}</span>
-            <div><small>minADE ↓</small><strong>{row.min_ade_m.toFixed(2)}m</strong></div>
-            <div><small>MISS ↓</small><strong>{(row.miss_rate * 100).toFixed(1)}%</strong></div>
-            <div><small>ECE ↓</small><strong>{row.expected_calibration_error.toFixed(3)}</strong></div>
-            <div><small>BRIER ↓</small><strong>{row.brier_score.toFixed(3)}</strong></div>
-            <em>{row.p95_latency_ms}ms</em>
+      <footer className="evidence-footer">
+        <div className="footer-label">
+          <span>Evaluation fixture</span>
+          <strong>Calibration · error · latency</strong>
+          <small>Metrics are synthetic test evidence, not claims about the footage.</small>
+        </div>
+        {metrics.slice(0, 3).map((metric) => (
+          <div className="metric-card" key={metric.model}>
+            <span>{metric.model.replace("-surrogate", "").replaceAll("-", " ")}</span>
+            <dl>
+              <div><dt>minADE ↓</dt><dd>{metric.min_ade_m.toFixed(2)}m</dd></div>
+              <div><dt>Miss ↓</dt><dd>{(metric.miss_rate * 100).toFixed(1)}%</dd></div>
+              <div><dt>ECE ↓</dt><dd>{metric.expected_calibration_error.toFixed(3)}</dd></div>
+              <div><dt>p95</dt><dd>{metric.p95_latency_ms}ms</dd></div>
+            </dl>
           </div>
         ))}
-        <div className="ood-card"><small>OOD PROXY / {actor.id}</small><strong>{actorForecast.ood_score.toFixed(2)}</strong><span className={actorForecast.ood_score > 0.3 ? "warn" : ""}>{actorForecast.ood_score > 0.3 ? "ELEVATED" : "IN RANGE"}</span><p>Occlusion + interaction proximity drive this bounded proxy.</p></div>
-      </section>
-
-      <footer>
-        <span>Deterministic portfolio surrogate · not a driving system</span>
-        <span>Seed 42 · 10 Hz · ENU coordinates</span>
-        <a href="http://127.0.0.1:8000/docs" target="_blank" rel="noreferrer">OPEN API DOCS ↗</a>
       </footer>
 
       {counterfactualOpen && (
-        <div className="modal-backdrop" onMouseDown={(event) => event.currentTarget === event.target && setCounterfactualOpen(false)}>
-          <section className="counterfactual-modal" role="dialog" aria-modal="true" aria-labelledby="cf-title" onKeyDown={(event) => { if (event.key === "Escape") setCounterfactualOpen(false); }}>
-            <button className="modal-close" onClick={() => setCounterfactualOpen(false)} aria-label="Close" autoFocus>×</button>
-            <small>CAUSAL SCENE EDITOR / 01</small>
-            <h2 id="cf-title">What if the delivery van were elsewhere?</h2>
-            <p>Reposition the obstruction and rerun the same 128 seeded mode samples. Actor intent stays fixed; only scene visibility changes.</p>
-            <div className="cf-options">
+        <div className="counterfactual-scrim" role="presentation" onMouseDown={() => setCounterfactualOpen(false)}>
+          <section
+            className="counterfactual-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="counterfactual-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header>
+              <div><span>Controlled intervention</span><h2 id="counterfactual-title">What changes if context visibility changes?</h2></div>
+              <button type="button" onClick={() => setCounterfactualOpen(false)} aria-label="Close counterfactual">×</button>
+            </header>
+            <p>The footage remains unchanged. The deterministic fixture reruns the selected <strong>{scenario.code}</strong> / <strong>{selectedTrack.id}</strong> evidence record while holding the reviewed track, source footage, horizon, sample count, and seed constant.</p>
+            <div className="intervention-options">
               {([
-                ["present", "Keep in place", "31% pedestrian visibility", "Baseline rerun"],
-                ["shifted", "Shift 8m north", "72% pedestrian visibility", "Forecast rerun"],
-                ["removed", "Remove van", "96% pedestrian visibility", "Forecast rerun"],
-              ] as const).map(([mode, title, detail, result]) => (
-                <button key={mode} className={draftObstruction === mode ? "active" : ""} aria-pressed={draftObstruction === mode} onClick={() => setDraftObstruction(mode)}>
-                  <span className={`mini-scene ${mode}`}><i /><b /></span>
-                  <strong>{title}</strong><small>{detail}</small><em>{result}</em>
+                ["present", "Observed", "Use the reviewed scene as recorded"],
+                ["shifted", "Shifted", "Increase visibility without removing context"],
+                ["removed", "Removed", "Test an unobstructed evidence condition"],
+              ] as const).map(([value, label, detail]) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={draftObstruction === value ? "active" : ""}
+                  onClick={() => setDraftObstruction(value)}
+                >
+                  <i /><span><strong>{label}</strong><small>{detail}</small></span>
                 </button>
               ))}
             </div>
-            <div className="cf-comparison">
-              <span><small>APPLIED RISK</small><strong>{Math.round(risk.collision_probability * 100)}%</strong></span>
+            <div className="counterfactual-summary">
+              <span>Baseline <strong>{Math.round(draftEvidenceResult.baseline_risk * 100)}%</strong></span>
               <i>→</i>
-              <span><small>SELECTED EDIT</small><strong>{draftObstruction}</strong></span>
-              <span><small>CONTROL</small><strong>seed 42</strong></span>
+              <span>Estimated <strong>{Math.round(draftEvidenceResult.counterfactual_risk * 100)}%</strong></span>
             </div>
-            <button className="run-button" onClick={runCounterfactual} disabled={counterfactualRunning}>
-              {counterfactualRunning ? "RERUNNING…" : "RERUN 128 SAMPLES"} <span>↗</span>
+            <button type="button" className="run-intervention" onClick={runCounterfactual} disabled={counterfactualRunning}>
+              {counterfactualRunning ? "Rerunning seeded fixture…" : "Rerun 128 samples"}
             </button>
           </section>
         </div>
       )}
-      {toast && <div className="toast" role="status" aria-live="polite"><i />{toast}</div>}
     </main>
   );
 }
