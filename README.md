@@ -126,7 +126,7 @@ Open the URL printed by the development server. All video, track, layer, transpo
 | `GET` | `/api/scenarios/{id}` | Typed actors, map features, and coordinate frame |
 | `POST` | `/api/forecast` | Multimodal trajectories, covariance, entropy, OOD proxy, and risk fixture |
 | `POST` | `/api/evidence-counterfactual` | Active real clip + reviewed actor + controlled visibility intervention |
-| `POST` | `/api/counterfactual` | Legacy synthetic ENU adapter-fixture comparison |
+| `POST` | `/api/counterfactual` | Coordinate-contract compatibility adapter used by non-footage tests |
 | `GET` | `/api/metrics` | Synthetic calibration, accuracy, OOD, and latency fixtures with provenance |
 
 Example counterfactual:
