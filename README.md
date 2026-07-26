@@ -2,6 +2,10 @@
 
 [![Live preview](https://img.shields.io/badge/live-preview-e96832?logo=github)](https://marinjursic.github.io/CrossingLab/)
 [![Preview status](https://github.com/MarinJursic/CrossingLab/actions/workflows/pages.yml/badge.svg)](https://github.com/MarinJursic/CrossingLab/actions/workflows/pages.yml)
+[![Next.js](https://img.shields.io/badge/Next.js-16-111714?logo=nextdotjs)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Tests](https://img.shields.io/badge/tests-39%20passing-176BCA)](#verification)
 
 Crossing Lab explains one potential intersection conflict from an elevated
 view. A real CC0 photograph remains the visual source of truth while a compact,
@@ -26,10 +30,10 @@ Watch the three tracks → understand the conflict → test a timing change
 [Open the full-resolution MP4](docs/walkthrough/app-walkthrough.mp4) ·
 [Open the poster frame](docs/walkthrough/app-walkthrough-poster.jpg)
 
-The walkthrough media is captured from the running application. A release
-capture should show the full Watch → Conflict → Test sequence, including actor
-selection, the likelihood uncertainty band, early braking, protected-turn
-timing, the replay action, and both themes.
+The walkthrough media is captured from the running application. It shows the
+full Watch → Conflict → Test sequence, including turning-vehicle selection, the
+likelihood uncertainty band, a protected-turn timing counterfactual, the replay
+action, and both themes.
 
 ## What makes the example understandable
 
