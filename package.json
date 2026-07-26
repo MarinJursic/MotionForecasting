@@ -1,7 +1,7 @@
 {
   "name": "autonomous-motion-forecasting-lab",
   "version": "0.1.0",
-  "description": "Interactive 3D autonomous-motion forecasting lab for multimodal trajectories, occupancy flow, calibrated uncertainty, and causal counterfactuals.",
+  "description": "Real-footage pair review with synchronized curated tracks, an evidence-derived image-plane relationship, deterministic motion fixtures, and controlled comparisons.",
   "private": true,
   "engines": {
     "node": ">=22.13.0"

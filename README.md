@@ -1,98 +1,143 @@
-# Vector Field — Real-World Motion Evidence Lab
+# Vector Field — Real Footage Pair Review
 
 [![Live preview](https://img.shields.io/badge/live-preview-e96832?logo=github)](https://marinjursic.github.io/autonomous-motion-forecasting-lab/)
 [![Preview status](https://github.com/MarinJursic/autonomous-motion-forecasting-lab/actions/workflows/pages.yml/badge.svg)](https://github.com/MarinJursic/autonomous-motion-forecasting-lab/actions/workflows/pages.yml)
 
-Vector Field is a footage-first laboratory for reviewing motion tracks, multimodal forecasts, occupancy risk, visibility, calibration fixtures, and controlled counterfactuals. The default experience uses locally bundled, licensed real traffic video—not low-poly vehicles or a synthetic road scene.
+Vector Field is a real-footage review surface for understanding which road-user
+curated pair is under review, where its camera-plane traces approach, and how a controlled visibility
+assumption changes a deterministic motion fixture. It replaces a dense
+dashboard of layers and synthetic scorecards with one three-step workflow:
+watch the evidence, read the interaction, and test one assumption.
 
-> **Research interface, not a driving system.** The clips are real, while the reviewed boxes and tracks are demonstration annotations created for this repository. Forecast probabilities and metrics come from an auditable deterministic fixture, not a trained or safety-validated production model.
+> **Research interface, not a driving system.** The clips are real and locally
+> bundled. Boxes and traces are demonstration annotations reviewed for this
+> repository. The interaction map uses normalized camera coordinates—not
+> calibrated world geometry—and the deterministic score is not a safety
+> probability.
 
 ## Continuous application walkthrough
 
-[![Continuous walkthrough of the running motion evidence lab](docs/walkthrough/app-walkthrough.gif)](docs/walkthrough/app-walkthrough.mp4)
+[![Continuous walkthrough of the running conflict review](docs/walkthrough/app-walkthrough.gif)](docs/walkthrough/app-walkthrough.mp4)
 
-[Open the full-resolution MP4](docs/walkthrough/app-walkthrough.mp4) · [Open the poster frame](docs/walkthrough/app-walkthrough-poster.jpg)
+[Open the full-resolution MP4](docs/walkthrough/app-walkthrough.mp4) ·
+[Open the poster frame](docs/walkthrough/app-walkthrough-poster.jpg)
 
-The walkthrough is one continuous recording of the running application. It reviews
-an aligned Gaithersburg actor while the source clip plays, runs a seeded
-visibility counterfactual, changes an evidence layer, moves through all three
-real-world scenarios, and demonstrates both themes. The footage plays continuously
-rather than being replaced by concept renders or spliced mock screens.
+The walkthrough is a continuous capture of the application itself. It moves from
+the real Gaithersburg intersection record to the real Market Street clip, changes
+the focal member of the curated pair, and opens the controlled visibility
+comparison. The footage and image-plane relationship stay synchronized throughout.
 
-## Three real-world scenarios
+## Why the interface is structured this way
 
-| Scenario | What it shows | Source and license |
-|---|---|---|
-| **MD-355 / MD-124, Gaithersburg** | Fixed elevated four-way intersection, daylight, dense cross traffic | G. Edward Johnson · [CC BY 4.0](https://commons.wikimedia.org/wiki/File:MD-355_and_MD-124_Gaithersburg_MD_2022-07-30_11-07-03_1.webm) |
-| **Market Street, San Francisco** | Dense transit corridor with buses, cars, and a cyclist | Editor · [CC BY 3.0](https://commons.wikimedia.org/wiki/File:Street_traffic.webm) |
-| **Cologne, Germany** | Low-light signal approach with reviewed vehicle movements | Maximilian Schönherr · [CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Cars_Passing_by_at_Night.webm) |
+Official autonomous-driving datasets separate visual evidence from spatial
+reasoning:
 
-Each source was trimmed, resized to 1280×720, transcoded to a local 30 fps VP9 WebM, and paired with an HD poster. No cars, cyclists, buildings, or background content were generated or composited. Full attribution and transformation notes are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- [Waymo Occupancy Flow Fields](https://waymo.com/research/occupancy-flow-fields-for-motion-forecasting-in-autonomous-driving/)
+  combines occupancy with motion direction instead of treating a heatmap as
+  sufficient context.
+- [Argoverse 2 motion forecasting](https://argoverse.github.io/user-guide/tasks/motion_forecasting.html)
+  designates focal and scored tracks, represents histories as time-indexed
+  positions, headings, and velocities, and pairs scenarios with local maps.
+- [Argoverse 2 maps](https://argoverse.github.io/user-guide/argoverse_2.html)
+  distinguish semantic lane and crossing geometry from sensor evidence.
+- The [nuScenes prediction task](https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/eval/prediction/README.md)
+  evaluates multiple candidate x/y trajectories with explicit probabilities.
+- [Euro NCAP car-to-car protocols](https://www.euroncap.com/safety-assist/)
+  define safety measurements only within controlled test conditions. This app
+  therefore does **not** show a fabricated TTC value from uncalibrated internet
+  video.
+- The [FHWA Surrogate Safety Assessment Model](https://highways.dot.gov/turner-fairbank-highway-research-center/software/ssam)
+  operates on detailed vehicle-trajectory records; this interface keeps its
+  uncalibrated camera traces visibly separate from physical safety measures.
+- [NHTSA crash-warning human-factors guidance](https://www.nhtsa.gov/document/crash-warning-system-interfaces-human-factors-insights-and-lessons-learned-0)
+  documents the comprehension benefit of a simpler single-stage mental model.
+  Vector Field is not an in-vehicle warning, but the same restraint motivates
+  its one analytical action instead of a wall of caution controls.
 
-Every checked-in track must remain attached to one visually identifiable road user across its full annotation window. The review pass intentionally removed a false Cologne cyclist track—the visible cargo bike was parked—and a Gaithersburg SUV track that crossed unrelated vehicles.
+Vector Field applies those conventions conservatively. The left panel remains
+the visual source of truth. The right panel reduces reviewed keyframes to a
+pair-only image-plane diagram, clearly labels simultaneous versus
+time-separated tracks, and reports either closest image-plane trace spacing or
+the gap between annotation windows.
 
-## How the app works
+## Three real-world review cases
 
-The center viewport is the evidence source of truth. `requestVideoFrameCallback` reads the actual decoded video clock, and the app interpolates reviewed track keyframes against that time. Scrubbing, looping, pausing, and playback-speed changes therefore keep boxes, observed trails, forecast branches, occupancy rings, frame numbers, and the actor inspector synchronized.
+| Scenario | Primary pair | What the UI asserts | Source |
+|---|---|---|---|
+| **Market Street, San Francisco** | cyclist `cyc-12` + taxi `taxi-73` | reviewed windows overlap near the center corridor; review candidate only | Editor · [CC BY 3.0](https://commons.wikimedia.org/wiki/File:Street_traffic.webm) |
+| **MD-355 / MD-124, Gaithersburg** | sedan `veh-101` + crossover `veh-204` | a time-separated same-corridor control; no near-collision claim | G. Edward Johnson · [CC BY 4.0](https://commons.wikimedia.org/wiki/File:MD-355_and_MD-124_Gaithersburg_MD_2022-07-30_11-07-03_1.webm) |
+| **Cologne, Germany** | vehicle `veh-08` + vehicle `veh-19` | two curated low-light tracks overlap in time; no automatic collision classification | Maximilian Schönherr · [CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Cars_Passing_by_at_Night.webm) |
 
-### Evidence controls
+Each source was trimmed, resized to 1280×720, transcoded to local 30 fps VP9
+WebM and H.264 MP4 derivatives, and paired with an HD poster. No vehicles, cyclists, roads, or background
+content were generated or composited. Attribution and transformation details
+are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-- Switch among three real clips without leaving the review surface.
-- Play, pause, scrub with 10 ms precision, and cycle through `0.5×`, `1×`, and `1.5×`.
-- Select an actor in the frame or review rail; choosing an out-of-window actor seeks to its evidence interval.
-- Toggle reviewed detections, observed trails, future branches, conflict occupancy, and the visibility field independently.
-- Read frame number, active-track count, clip provenance, annotation confidence, and visibility context.
-- Change between persistent dark and light themes with accessible focus states and responsive layouts.
-- On narrow screens the evidence footage and transport appear before the review and forecast rails.
+## The three-step review
 
-### Forecast controls
+### 1. Watch the evidence
 
-The selected actor receives three visual future modes:
+- The actual decoded video clock is read with `requestVideoFrameCallback`.
+- Only the two primary tracks are shown by default; optional contextual tracks
+  require one explicit toggle.
+- Play, pause, scrub, and `0.5×` / `1×` / `1.5×` playback remain synchronized
+  with frame-bounded boxes.
+- Selecting a box makes that record focal without opening another dashboard.
+- The source creator and license stay next to the footage.
 
-| Mode | Display |
-|---|---|
-| Continue | Solid orange branch |
-| Yield | Cyan dashed branch |
-| Deviate | Violet dotted branch |
+### 2. Read the interaction
 
-All branches begin at the same current-time track position. Their display is synchronized to the video and bounded to the reviewed annotation interval.
+The evidence-derived image-plane relationship is generated from the same
+reviewed keyframes that drive the camera boxes. It contains no vehicle
+illustrations, invented road model, coordinate axes, or projected-world claim.
+Colored traces, keyframe samples, current positions, and the closest reviewed
+relationship make the pair legible at a glance.
 
-### Counterfactual
+For simultaneously visible tracks, the app samples the common review interval
+and marks the visually closest reviewed moment without exposing a physical
+distance. If the windows do not overlap, it says so directly. This is a curated
+review aid, not an automatic collision determination.
 
-The controlled intervention changes one context variable:
+### 3. Test one assumption
+
+The only analytical action is a controlled visibility comparison:
 
 ```text
-obstruction ∈ {present, shifted, removed}
+visibility context ∈ {recorded, improved, unobstructed fixture}
 ```
 
-The active real scenario ID, selected reviewed actor ID, and intervention are all sent to the evidence endpoint. The reviewed track, source footage, horizon, seed (`42`), and sample count (`128`) remain fixed. Running the intervention calls the FastAPI engine when available and uses the byte-for-byte matching deterministic TypeScript fallback otherwise. The response drives the displayed risk, visibility, and mode probabilities; it is not discarded or replaced with a hard-coded UI value. The footage itself never changes.
+The current real scenario ID, focal reviewed actor ID, and intervention are sent
+to the FastAPI evidence endpoint. The footage, keyframes, horizon, seed (`42`),
+and sample count (`128`) remain fixed. If the API is unavailable, the TypeScript
+fallback uses the matching unsigned 32-bit generator and allocation rules.
 
-The app labels the result as a fixture. It does not imply that removing an obstruction from a mathematical scenario edits the real video or proves a safety outcome.
+The response updates the named watch band and continue/yield/deviate
+distribution. The application does not edit the video, infer physical
+separation, or claim a validated collision probability.
 
-## Architecture
+## Interaction model
 
 ```mermaid
 flowchart LR
-    A["Licensed real traffic clips"] --> B["30 fps local WebM"]
-    C["Reviewed annotation keyframes"] --> D["Time interpolation"]
-    B --> E["Decoded video clock"]
-    E --> D
-    D --> F["Boxes · trails · forecast branches · occupancy"]
-    F --> G["Next.js evidence workstation"]
-
-    H["FastAPI deterministic fixture"] --> G
-    I["TypeScript offline fallback"] --> G
-    G --> J["Controlled counterfactual"]
+    A["Licensed traffic footage"] --> B["Decoded video clock"]
+    C["Reviewed keyframes"] --> D["Frame-bounded interpolation"]
+    B --> D
+    D --> E["Camera evidence"]
+    D --> F["Pair-only interaction view"]
+    F --> G["Simultaneous spacing or temporal gap"]
+    H["FastAPI deterministic fixture"] --> I["Visibility comparison"]
+    J["TypeScript parity fallback"] --> I
+    I --> K["Named watch band + mode distribution"]
 ```
 
 | Layer | Responsibility |
 |---|---|
-| `app/components/MotionLab.tsx` | Video clock, transport, layers, actor review, inspector, themes, counterfactual interaction |
-| `app/lib/scenarios.ts` | Clip provenance, reviewed keyframes, bounded interpolation, observed and forecast paths |
-| `app/lib/motion-domain.ts` | Typed API client, deterministic forecast and counterfactual fallback |
-| `backend/app/engine.py` | Seeded multimodal allocation, covariance growth, risk fixture, synthetic metrics |
-| `backend/app/schemas.py` | Strict Pydantic request/response contracts |
-| `backend/app/adapters.py` | Validated normalized mapping seams for separately obtained Waymo or CARLA input |
+| `app/components/MotionLab.tsx` | three-step workflow, video synchronization, pair focus, accessibility, themes, comparison |
+| `app/lib/scenarios.ts` | provenance, reviewed keyframes, pair definitions, interpolation, relationship derivation |
+| `app/lib/motion-domain.ts` | typed API client and byte-matching deterministic fallback |
+| `backend/app/engine.py` | seeded multimodal allocation and transparent risk fixture |
+| `backend/app/schemas.py` | strict request and response contracts |
+| `backend/app/adapters.py` | validated normalized mapping seams for separately obtained Waymo or CARLA input |
 
 ## Run locally
 
@@ -116,20 +161,22 @@ Start the web application in another terminal:
 npm run dev
 ```
 
-Open the URL printed by the development server. All video, track, layer, transport, scenario, source, and theme interactions work without the API. The counterfactual and evaluation panels use the matching local fixture when the API is unavailable.
+All footage, pair selection, transport, scenario, source, theme, and
+interaction-map behavior works without the API. The controlled comparison uses
+the parity fallback when the API is unavailable.
 
 ## API
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` | Readiness and active engine |
-| `GET` | `/api/scenarios/{id}` | Typed actors, map features, and coordinate frame |
-| `POST` | `/api/forecast` | Multimodal trajectories, covariance, entropy, OOD proxy, and risk fixture |
-| `POST` | `/api/evidence-counterfactual` | Active real clip + reviewed actor + controlled visibility intervention |
-| `POST` | `/api/counterfactual` | Coordinate-contract compatibility adapter used by non-footage tests |
-| `GET` | `/api/metrics` | Synthetic calibration, accuracy, OOD, and latency fixtures with provenance |
+| `GET` | `/health` | readiness and active engine |
+| `GET` | `/api/scenarios/{id}` | typed actors, map features, and coordinate frame |
+| `POST` | `/api/forecast` | multimodal trajectories, covariance, entropy, OOD proxy, and risk fixture |
+| `POST` | `/api/evidence-counterfactual` | active real clip + reviewed actor + controlled visibility intervention |
+| `POST` | `/api/counterfactual` | coordinate-contract compatibility adapter |
+| `GET` | `/api/metrics` | synthetic test metrics with explicit provenance |
 
-Example counterfactual:
+Example:
 
 ```bash
 curl -s http://127.0.0.1:8000/api/evidence-counterfactual \
@@ -144,66 +191,48 @@ curl -s http://127.0.0.1:8000/api/evidence-counterfactual \
   }'
 ```
 
-## Deterministic fixture
-
-The bundled model remains intentionally inspectable:
-
-1. a small interaction stage raises uncertainty near conflict and occlusion;
-2. a seeded categorical sampler allocates the requested count across continue, yield, and deviate modes;
-3. trajectories receive curvature, speed scaling, and time-growing covariance;
-4. empirical frequencies are normalized into per-actor probabilities;
-5. a documented logistic fixture combines crossing probability and visibility into a scenario watch score.
-
-Python and TypeScript use the same unsigned 32-bit seeded generator and allocation rules. Identical inputs therefore return identical fixture outputs online and offline. Reproducibility is useful for interface and systems testing; it is not evidence of model accuracy.
-
 ## Verification
 
 ```bash
 npm run verify
 ```
 
-The complete gate covers:
-
-- production application and worker build;
-- strict TypeScript and ESLint checks;
-- three local WebM files with valid EBML headers and 1280×720 posters;
-- track interpolation boundaries and common-origin multimodal forecasts;
-- synchronized video-clock, layer, timeline, source, theme, mobile-order, and counterfactual contracts;
-- selected scenario/actor/intervention binding, deterministic browser/API parity, and HTTP error handling;
-- FastAPI endpoints, schemas, OpenAPI, covariance, counterfactual recomputation, fixture provenance, and adapter validation.
-
-The project currently includes twelve browser/domain contract tests and fifteen backend tests.
+The gate covers production builds, strict TypeScript, ESLint, responsive and
+theme contracts, three valid local WebM files and HD posters, frame-bounded
+interpolation, pair integrity, derived closest relationships, synchronized
+video controls, deterministic browser/API parity, typed HTTP errors, FastAPI
+schemas, seeded covariance and probability behavior, and adapter validation.
 
 ## Accuracy boundaries
 
-- Real footage does not make the overlays benchmark ground truth. They are reviewed demonstration annotations.
-- Synthetic evaluation cards are clearly labeled and must not be compared with published model results.
-- The collision watch score is a transparent fixture, not a calibrated safety probability.
-- OOD is an interaction/visibility proxy, not a validated detector.
-- No control, planning, or actuation output is produced.
-- The adapter seams validate normalized mappings but do not redistribute Waymo data or bundle a running CARLA client.
-- Production use requires licensed data, evaluated perception and forecasting models, dataset split discipline, probability calibration, rare-event testing, and formal safety review.
-
-## Research grounding
-
-- Waymo, [Open Motion Dataset](https://waymo.com/open/about/)
-- Waymo, [Large-scale interactive motion forecasting](https://waymo.com/research/large-scale-interactive-motion-forecasting-for-autonomous-driving--the-waymo-open-motion-dataset/)
-- Waymo, [MotionDiffuser](https://waymo.com/research/motiondiffuser-controllable-multi-agent-motion-prediction-using-diffusion/)
-- CARLA, [coordinate system documentation](https://carla.readthedocs.io/en/latest/coordinates/)
-- FastAPI, [type-driven validation](https://fastapi.tiangolo.com/python-types/)
-- MDN, [`requestVideoFrameCallback`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLVideoElement/requestVideoFrameCallback)
+- The image-plane relationship is not a homography, HD map, physical scene
+  reconstruction, or world-coordinate frame.
+- Trace spacing is percentage-of-frame distance and must not be interpreted as
+  meters.
+- The clips do not contain benchmark ground truth; the boxes are reviewed
+  demonstration annotations.
+- The qualitative review band is an authored deterministic UI fixture, not a
+  calibrated safety probability.
+- No TTC is computed because the media lacks the calibration and controlled
+  conditions needed to make it defensible.
+- No planning, control, or actuation output is produced.
+- Production use requires licensed sensor data, calibrated geometry, evaluated
+  perception and forecasting models, probability calibration, rare-event
+  testing, and formal safety review.
 
 ## Repository map
 
 ```text
-app/components/MotionLab.tsx  footage-first review workstation
-app/lib/scenarios.ts          real clips, provenance, tracks, interpolation
+app/components/MotionLab.tsx  footage + pair-first review workflow
+app/lib/scenarios.ts          real clips, provenance, tracks, pair analysis
 app/lib/motion-domain.ts      typed fixture and API client
-backend/app/                  FastAPI schema, engine, endpoints, adapters
+backend/app/                  FastAPI schemas, engine, endpoints, adapters
 public/scenarios/             three licensed real-world WebM clips and posters
 docs/walkthrough/             continuous MP4, GIF preview, and poster
-tests/                        video, interpolation, rendered-shell, and domain tests
+tests/                        media, pair, UI contract, rendering, and parity tests
 THIRD_PARTY_NOTICES.md        media attribution and transformation record
 ```
 
-The source code is governed by the repository license. Third-party traffic footage remains under the licenses recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+No source-code license has been selected; copyright remains with the repository
+owner. Third-party traffic footage remains under the licenses recorded in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

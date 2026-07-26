@@ -25,6 +25,7 @@ export type RealScenario = {
   duration: number;
   defaultTime: number;
   video: string;
+  mp4: string;
   poster: string;
   sourceUrl: string;
   creator: string;
@@ -32,7 +33,24 @@ export type RealScenario = {
   licenseUrl: string;
   baselineRisk: number;
   visibility: number;
+  conflict: {
+    id: string;
+    actorIds: [string, string];
+    title: string;
+    encounter: string;
+    reviewWindow: [number, number];
+    note: string;
+  };
   actors: ScenarioActor[];
+};
+
+export type ConflictAnalysis = {
+  actorA: ScenarioActor;
+  actorB: ScenarioActor;
+  simultaneous: boolean;
+  closestTime: number | null;
+  temporalGap: number | null;
+  zone: { x: number; y: number };
 };
 
 export type InterpolatedActor = ScenarioActor & TrackKeyframe;
@@ -177,6 +195,7 @@ export const REAL_SCENARIOS: RealScenario[] = [
     duration: 18,
     defaultTime: 3.6,
     video: "/scenarios/gaithersburg-intersection.webm",
+    mp4: "/scenarios/gaithersburg-intersection.mp4",
     poster: "/scenarios/gaithersburg-intersection-poster.jpg",
     sourceUrl: "https://commons.wikimedia.org/wiki/File:MD-355_and_MD-124_Gaithersburg_MD_2022-07-30_11-07-03_1.webm",
     creator: "G. Edward Johnson",
@@ -184,6 +203,14 @@ export const REAL_SCENARIOS: RealScenario[] = [
     licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
     baselineRisk: 0.38,
     visibility: 0.94,
+    conflict: {
+      id: "veh-101--veh-204",
+      actorIds: ["veh-101", "veh-204"],
+      title: "Same-corridor handoff",
+      encounter: "Sequential eastbound tracks",
+      reviewWindow: [1.8, 3],
+      note: "The reviewed windows are separated in time. This is a control case, not an asserted near-collision.",
+    },
     actors: gaithersburgActors,
   },
   {
@@ -196,6 +223,7 @@ export const REAL_SCENARIOS: RealScenario[] = [
     duration: 18,
     defaultTime: 9.8,
     video: "/scenarios/market-street.webm",
+    mp4: "/scenarios/market-street.mp4",
     poster: "/scenarios/market-street-poster.jpg",
     sourceUrl: "https://commons.wikimedia.org/wiki/File:Street_traffic.webm",
     creator: "Editor",
@@ -203,6 +231,14 @@ export const REAL_SCENARIOS: RealScenario[] = [
     licenseUrl: "https://creativecommons.org/licenses/by/3.0/",
     baselineRisk: 0.46,
     visibility: 0.78,
+    conflict: {
+      id: "cyc-12--taxi-73",
+      actorIds: ["cyc-12", "taxi-73"],
+      title: "Cyclist–taxi convergence",
+      encounter: "Overlapping reviewed paths",
+      reviewWindow: [9.1, 11.4],
+      note: "Both reviewed tracks are present together near the center corridor; the display marks a review candidate, not a collision claim.",
+    },
     actors: marketActors,
   },
   {
@@ -210,11 +246,12 @@ export const REAL_SCENARIOS: RealScenario[] = [
     code: "CGN–NIGHT–001",
     title: "Low-light signal approach",
     location: "Cologne, Germany",
-    context: "Roadside camera · night · cyclist and vehicle interaction",
+    context: "Roadside camera · night · crossing vehicle interaction",
     date: "03 Jan 2024",
     duration: 15,
     defaultTime: 10.6,
     video: "/scenarios/cologne-night.webm",
+    mp4: "/scenarios/cologne-night.mp4",
     poster: "/scenarios/cologne-night-poster.jpg",
     sourceUrl: "https://commons.wikimedia.org/wiki/File:Cars_Passing_by_at_Night.webm",
     creator: "Maximilian Schönherr",
@@ -222,6 +259,14 @@ export const REAL_SCENARIOS: RealScenario[] = [
     licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
     baselineRisk: 0.57,
     visibility: 0.52,
+    conflict: {
+      id: "veh-08--veh-19",
+      actorIds: ["veh-08", "veh-19"],
+      title: "Crossing-path approach",
+      encounter: "Two visible vehicle tracks",
+      reviewWindow: [3.6, 5.5],
+      note: "The two curated reviewed paths overlap in time under low light; the interface does not classify them as an automatic collision.",
+    },
     actors: cologneActors,
   },
 ];
@@ -247,6 +292,64 @@ export function interpolateActor(actor: ScenarioActor, time: number): Interpolat
 
 export function observedPath(actor: ScenarioActor) {
   return actor.keyframes.map((frame) => `${frame.x + frame.w / 2},${frame.y + frame.h}`).join(" ");
+}
+
+function actorAnchor(actor: ScenarioActor, time: number) {
+  const state = interpolateActor(actor, time);
+  return state
+    ? { x: state.x + state.w / 2, y: state.y + state.h }
+    : null;
+}
+
+export function analyzeConflict(scenario: RealScenario): ConflictAnalysis {
+  const [actorAId, actorBId] = scenario.conflict.actorIds;
+  const actorA = scenario.actors.find((actor) => actor.id === actorAId);
+  const actorB = scenario.actors.find((actor) => actor.id === actorBId);
+  if (!actorA || !actorB) throw new Error(`Conflict ${scenario.conflict.id} references an unknown track`);
+
+  const overlapStart = Math.max(actorA.keyframes[0].t, actorB.keyframes[0].t);
+  const overlapEnd = Math.min(actorA.keyframes.at(-1)!.t, actorB.keyframes.at(-1)!.t);
+  if (overlapStart > overlapEnd) {
+    const earlier = actorA.keyframes.at(-1)!.t <= actorB.keyframes[0].t ? actorA : actorB;
+    const later = earlier === actorA ? actorB : actorA;
+    const earlierEnd = earlier.keyframes.at(-1)!;
+    const laterStart = later.keyframes[0];
+    return {
+      actorA,
+      actorB,
+      simultaneous: false,
+      closestTime: null,
+      temporalGap: Number((laterStart.t - earlierEnd.t).toFixed(2)),
+      zone: {
+        x: (earlierEnd.x + earlierEnd.w / 2 + laterStart.x + laterStart.w / 2) / 2,
+        y: (earlierEnd.y + earlierEnd.h + laterStart.y + laterStart.h) / 2,
+      },
+    };
+  }
+
+  let closestTime = overlapStart;
+  let closestRelationship = Number.POSITIVE_INFINITY;
+  let zone = { x: 50, y: 28.125 };
+  for (let index = 0; index <= 80; index += 1) {
+    const time = overlapStart + ((overlapEnd - overlapStart) * index) / 80;
+    const pointA = actorAnchor(actorA, time)!;
+    const pointB = actorAnchor(actorB, time)!;
+    const distance = Math.hypot(pointA.x - pointB.x, pointA.y - pointB.y);
+    if (distance < closestRelationship) {
+      closestRelationship = distance;
+      closestTime = time;
+      zone = { x: (pointA.x + pointB.x) / 2, y: (pointA.y + pointB.y) / 2 };
+    }
+  }
+
+  return {
+    actorA,
+    actorB,
+    simultaneous: true,
+    closestTime: Number(closestTime.toFixed(2)),
+    temporalGap: null,
+    zone,
+  };
 }
 
 export function forecastPaths(actor: ScenarioActor, time: number) {

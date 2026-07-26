@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createLocalEvidenceCounterfactual } from "../app/lib/motion-domain.ts";
 import {
+  analyzeConflict,
   forecastPaths,
   formatScenarioTime,
   interpolateActor,
@@ -28,16 +29,21 @@ function jpegDimensions(bytes) {
   throw new Error("JPEG dimensions were not found");
 }
 
-test("ships three licensed local real-world evidence clips and HD posters", async () => {
+test("ships three licensed real-world clips with WebM, H.264 MP4, and HD posters", async () => {
   assert.equal(REAL_SCENARIOS.length, 3);
   for (const scenario of REAL_SCENARIOS) {
     assert.match(scenario.video, /^\/scenarios\/.+\.webm$/);
+    assert.match(scenario.mp4, /^\/scenarios\/.+\.mp4$/);
     assert.match(scenario.poster, /^\/scenarios\/.+-poster\.jpg$/);
     assert.match(scenario.sourceUrl, /^https:\/\/commons\.wikimedia\.org\//);
     assert.match(scenario.license, /^CC BY/);
     const video = await readFile(new URL(`public${scenario.video}`, root));
     assert.ok(video.length > 200_000);
     assert.deepEqual([...video.subarray(0, 4)], [0x1a, 0x45, 0xdf, 0xa3], "WebM begins with an EBML header");
+    const mp4 = await readFile(new URL(`public${scenario.mp4}`, root));
+    assert.ok(mp4.length > 200_000);
+    assert.equal(mp4.subarray(4, 8).toString("ascii"), "ftyp");
+    assert.ok(mp4.includes(Buffer.from("avc1")), "MP4 declares an H.264 sample entry");
     const poster = await readFile(new URL(`public${scenario.poster}`, root));
     assert.deepEqual(jpegDimensions(poster), { width: 1280, height: 720 });
   }
@@ -54,6 +60,30 @@ test("ships three licensed local real-world evidence clips and HD posters", asyn
       assert.equal(evidence.actor_id, actor.id);
     }
   }
+});
+
+test("each scenario names an auditable pair and derives its relationship from reviewed tracks", () => {
+  for (const scenario of REAL_SCENARIOS) {
+    const analysis = analyzeConflict(scenario);
+    assert.deepEqual(
+      [analysis.actorA.id, analysis.actorB.id],
+      scenario.conflict.actorIds,
+    );
+    assert.ok(scenario.conflict.note.length > 40);
+    assert.ok(analysis.zone.x >= 0 && analysis.zone.x <= 100);
+    assert.ok(analysis.zone.y >= 0 && analysis.zone.y <= 56.25);
+    if (analysis.simultaneous) {
+      assert.ok(analysis.closestTime >= scenario.conflict.reviewWindow[0]);
+      assert.ok(analysis.closestTime <= scenario.conflict.reviewWindow[1]);
+      assert.equal(analysis.temporalGap, null);
+    } else {
+      assert.ok(analysis.temporalGap > 0);
+      assert.equal(analysis.closestTime, null);
+    }
+  }
+  assert.equal(analyzeConflict(REAL_SCENARIOS[0]).simultaneous, false);
+  assert.equal(analyzeConflict(REAL_SCENARIOS[1]).simultaneous, true);
+  assert.equal(analyzeConflict(REAL_SCENARIOS[2]).simultaneous, true);
 });
 
 test("track interpolation is frame-bounded and forecast branches share an origin", () => {
