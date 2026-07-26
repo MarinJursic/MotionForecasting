@@ -1,5 +1,16 @@
 # Third-party media
 
+## Traffic at night, Vancouver
+
+- **Creator:** Ferdinand Stöhr
+- **Original:** [Wikimedia Commons record](https://commons.wikimedia.org/wiki/File:Traffic_at_night_(Unsplash).jpg)
+- **License:** [CC0 1.0 Universal Public Domain Dedication](https://creativecommons.org/publicdomain/zero/1.0/)
+- **Local derivative:** `public/scenarios/vancouver-overhead.jpg`
+- **Transformation:** Wikimedia Commons’ 1920-pixel JPEG derivative is bundled
+  without compositing. The application places authored SVG trajectories above
+  the photograph at runtime; those annotations are not part of the source image
+  and are not claimed as measured detections.
+
 The application bundles web-delivery derivatives of three real-world traffic videos. Each clip was trimmed, resized to 1280×720, converted without audio to 30 fps VP9 WebM and H.264 High Profile MP4 (`yuv420p`, fast-start), and paired with a JPEG poster. No vehicles, people, or background content were generated or composited.
 
 ## MD-355 and MD-124, Gaithersburg

@@ -2,76 +2,68 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  createLocalEvidenceCounterfactual,
-  fetchEvidenceCounterfactual,
-  ObstructionMode,
-} from "../lib/motion-domain";
-import {
-  analyzeConflict,
-  formatScenarioTime,
-  interpolateActor,
-  observedPath,
-  REAL_SCENARIOS,
-  ScenarioActor,
-} from "../lib/scenarios";
+  actorState,
+  CONFLICT_POINT,
+  estimateConflict,
+  FIXTURE_DURATION_S,
+  forecastPoints,
+  Intervention,
+  interventionLabel,
+  observedPoints,
+  OVERHEAD_ACTORS,
+  OVERHEAD_SOURCE,
+} from "../lib/overhead-scenario";
 
 type Theme = "dark" | "light";
-type EngineState = "ready" | "connected" | "local";
-type VideoState = "loading" | "ready" | "buffering" | "error";
+type Stage = "watch" | "conflict" | "test";
 
-const API_URL = process.env.NEXT_PUBLIC_MOTION_API_URL ?? "http://127.0.0.1:8000";
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-const SPEEDS = [0.5, 1, 1.5];
+const PRIMARY_ACTORS = OVERHEAD_ACTORS.slice(0, 2);
+const STAGES: Array<{ id: Stage; number: string; title: string; copy: string }> = [
+  {
+    id: "watch",
+    number: "01",
+    title: "Watch",
+    copy: "Follow the three tracks",
+  },
+  {
+    id: "conflict",
+    number: "02",
+    title: "Conflict",
+    copy: "Read one crossing event",
+  },
+  {
+    id: "test",
+    number: "03",
+    title: "Test",
+    copy: "Separate their arrival times",
+  },
+];
 
-function interventionLabel(mode: ObstructionMode) {
-  if (mode === "shifted") return "Improved condition";
-  if (mode === "removed") return "Unobstructed condition";
-  return "Recorded context";
+function formatTime(value: number) {
+  return `${value.toFixed(1)} s`;
 }
 
-function fixtureBand(value: number) {
-  if (value >= 0.58) return "Higher review band";
-  if (value >= 0.4) return "Review band";
-  return "Lower review band";
-}
-
-function actorPosition(actor: ScenarioActor, time: number) {
-  const state = interpolateActor(actor, time);
-  return state ? { x: state.x + state.w / 2, y: state.y + state.h } : null;
-}
-
-function trackWindow(actor: ScenarioActor) {
-  return `${formatScenarioTime(actor.keyframes[0].t)}–${formatScenarioTime(actor.keyframes.at(-1)!.t)}`;
+function velocityLabel(value: number) {
+  return `${value.toFixed(1)} m/s · ${Math.round(value * 3.6)} km/h`;
 }
 
 export function MotionLab() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const frameCallbackRef = useRef<number | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const previousTimeRef = useRef<number | null>(null);
   const [theme, setTheme] = useState<Theme>("dark");
-  const [scenarioIndex, setScenarioIndex] = useState(1);
-  const scenario = REAL_SCENARIOS[scenarioIndex];
-  const conflict = useMemo(() => analyzeConflict(scenario), [scenario]);
-  const [time, setTime] = useState(scenario.defaultTime);
+  const [stage, setStage] = useState<Stage>("watch");
+  const [time, setTime] = useState(2.45);
   const [playing, setPlaying] = useState(true);
-  const [videoState, setVideoState] = useState<VideoState>("loading");
-  const [speed, setSpeed] = useState(1);
-  const [selectedActor, setSelectedActor] = useState(scenario.conflict.actorIds[0]);
-  const [showContextTracks, setShowContextTracks] = useState(false);
-  const [engineState, setEngineState] = useState<EngineState>("ready");
-  const [counterfactualOpen, setCounterfactualOpen] = useState(false);
-  const [counterfactualRunning, setCounterfactualRunning] = useState(false);
-  const [obstruction, setObstruction] = useState<ObstructionMode>("present");
-  const [draftObstruction, setDraftObstruction] = useState<ObstructionMode>("present");
-  const [evidenceResult, setEvidenceResult] = useState(() =>
-    createLocalEvidenceCounterfactual(scenario.id, scenario.conflict.actorIds[0], "present"),
+  const [selectedActor, setSelectedActor] = useState(PRIMARY_ACTORS[0].id);
+  const [intervention, setIntervention] = useState<Intervention>("recorded");
+  const [showContext, setShowContext] = useState(true);
+  const [notice, setNotice] = useState(
+    "Playing the authored eight-second intersection fixture",
   );
-  const [notice, setNotice] = useState("Camera evidence and image-plane relationship are synchronized");
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("vector-field-theme");
+    const stored = window.localStorage.getItem("crossing-lab-theme");
     const preferred: Theme =
       stored === "light" || stored === "dark"
         ? stored
@@ -79,492 +71,556 @@ export function MotionLab() {
           ? "light"
           : "dark";
     document.documentElement.dataset.theme = preferred;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setPlaying(false);
+      setNotice("Fixture paused because reduced motion is enabled");
+    }
     const frame = window.requestAnimationFrame(() => setTheme(preferred));
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    setVideoState("loading");
-    video.pause();
-    video.load();
-  }, [scenario]);
-
-  useEffect(() => {
-    if (videoRef.current) videoRef.current.playbackRate = speed;
-  }, [speed]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || typeof video.requestVideoFrameCallback !== "function") return;
-    const update = () => {
-      setTime(video.currentTime);
-      frameCallbackRef.current = video.requestVideoFrameCallback(update);
-    };
-    frameCallbackRef.current = video.requestVideoFrameCallback(update);
-    return () => {
-      if (frameCallbackRef.current !== null) video.cancelVideoFrameCallback(frameCallbackRef.current);
-      frameCallbackRef.current = null;
-    };
-  }, [scenario]);
-
-  useEffect(() => {
-    if (!counterfactualOpen) return;
-    closeButtonRef.current?.focus();
-    const handleDialogKeys = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setCounterfactualOpen(false);
-      if (event.key !== "Tab" || !dialogRef.current) return;
-      const focusable = Array.from(
-        dialogRef.current.querySelectorAll<HTMLElement>(
-          "button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex='-1'])",
-        ),
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable.at(-1)!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
+    if (!playing) {
+      previousTimeRef.current = null;
+      return;
+    }
+    const tick = (timestamp: number) => {
+      if (previousTimeRef.current !== null) {
+        const elapsed = Math.min((timestamp - previousTimeRef.current) / 1000, 0.1);
+        setTime((current) => {
+          const next = current + elapsed;
+          return next > FIXTURE_DURATION_S ? 0 : next;
+        });
       }
+      previousTimeRef.current = timestamp;
+      animationRef.current = window.requestAnimationFrame(tick);
     };
-    window.addEventListener("keydown", handleDialogKeys);
+    animationRef.current = window.requestAnimationFrame(tick);
     return () => {
-      window.removeEventListener("keydown", handleDialogKeys);
-      previousFocusRef.current?.focus();
+      if (animationRef.current !== null) {
+        window.cancelAnimationFrame(animationRef.current);
+      }
+      animationRef.current = null;
+      previousTimeRef.current = null;
     };
-  }, [counterfactualOpen]);
+  }, [playing]);
 
-  const pairActors = useMemo(
-    () => [conflict.actorA, conflict.actorB],
-    [conflict],
+  const estimate = useMemo(
+    () => estimateConflict(intervention, time),
+    [intervention, time],
   );
-  const displayedActors = showContextTracks ? scenario.actors : pairActors;
-  const activeActors = useMemo(
-    () =>
-      displayedActors.flatMap((actor) => {
-        const current = interpolateActor(actor, time);
-        return current ? [current] : [];
-      }),
-    [displayedActors, time],
-  );
-  const selectedTrack =
-    scenario.actors.find((actor) => actor.id === selectedActor) ?? conflict.actorA;
-  const pairPositions = pairActors.map((actor) => actorPosition(actor, time));
-  const draftEvidenceResult = useMemo(
-    () => createLocalEvidenceCounterfactual(scenario.id, selectedTrack.id, draftObstruction),
-    [draftObstruction, scenario.id, selectedTrack.id],
-  );
-  const riskLabel = fixtureBand(evidenceResult.counterfactual_risk);
-  const orderedModes = [...evidenceResult.mode_probabilities].sort(
-    (left, right) => right.probability - left.probability,
-  );
+  const actors = showContext ? OVERHEAD_ACTORS : PRIMARY_ACTORS;
+  const selected =
+    OVERHEAD_ACTORS.find((actor) => actor.id === selectedActor) ??
+    PRIMARY_ACTORS[0];
+  const selectedState = actorState(selected, time, intervention);
+
+  const setReviewStage = (next: Stage) => {
+    setStage(next);
+    if (next !== "test") {
+      setIntervention("recorded");
+    }
+    if (next === "conflict") {
+      setTime(2.45);
+      setPlaying(false);
+      setNotice("Observed flow restored and paused before the shared conflict point");
+    } else if (next === "test") {
+      setTime(2.45);
+      setPlaying(false);
+      setNotice("Choose a control and compare the arrival gap");
+    } else {
+      setPlaying(true);
+      setNotice("Playing the authored eight-second intersection fixture");
+    }
+  };
 
   const toggleTheme = () => {
     const next: Theme = theme === "dark" ? "light" : "dark";
     setTheme(next);
     document.documentElement.dataset.theme = next;
-    window.localStorage.setItem("vector-field-theme", next);
+    window.localStorage.setItem("crossing-lab-theme", next);
   };
 
-  const togglePlayback = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.paused) void video.play();
-    else video.pause();
-  };
-
-  const prepareVideo = (video: HTMLVideoElement) => {
-    video.currentTime = scenario.defaultTime;
-    video.playbackRate = speed;
-    void video.play().catch(() => {
-      setPlaying(false);
-      setVideoState("ready");
-    });
-  };
-
-  const cycleSpeed = () => {
-    const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
-    setSpeed(next);
-    if (videoRef.current) videoRef.current.playbackRate = next;
-  };
-
-  const seek = (nextTime: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.currentTime = nextTime;
-    setTime(nextTime);
-  };
-
-  const selectEvidenceActor = (actorId: string) => {
-    setSelectedActor(actorId);
-    setEvidenceResult(createLocalEvidenceCounterfactual(scenario.id, actorId, obstruction));
-    setNotice(`${actorId} is now the focal reviewed track`);
-  };
-
-  const chooseScenario = (index: number) => {
-    const nextScenario = REAL_SCENARIOS[index];
-    const nextActor = nextScenario.conflict.actorIds[0];
-    setScenarioIndex(index);
-    setTime(nextScenario.defaultTime);
+  const restart = () => {
+    setTime(0);
     setPlaying(true);
-    setSpeed(1);
-    setObstruction("present");
-    setDraftObstruction("present");
-    setSelectedActor(nextActor);
-    setEvidenceResult(createLocalEvidenceCounterfactual(nextScenario.id, nextActor, "present"));
-    setNotice(`Opened ${nextScenario.location} · curated reviewed pair ready`);
+    setNotice("Restarted from the beginning of the fixture");
   };
 
-  const openCounterfactual = () => {
-    previousFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
-    setDraftObstruction(obstruction);
-    setCounterfactualOpen(true);
-  };
-
-  const runCounterfactual = async () => {
-    setCounterfactualRunning(true);
-    try {
-      const response = await fetchEvidenceCounterfactual(
-        API_URL,
-        scenario.id,
-        selectedTrack.id,
-        draftObstruction,
-      );
-      setEvidenceResult(response);
-      setEngineState("connected");
-      setNotice(`${interventionLabel(draftObstruction)} applied to ${selectedTrack.id}`);
-    } catch {
-      const response = createLocalEvidenceCounterfactual(
-        scenario.id,
-        selectedTrack.id,
-        draftObstruction,
-      );
-      setEvidenceResult(response);
-      setEngineState("local");
-      setNotice(`Matching local fixture applied to ${selectedTrack.id}`);
-    } finally {
-      setObstruction(draftObstruction);
-      setCounterfactualRunning(false);
-      setCounterfactualOpen(false);
-    }
+  const applyIntervention = (next: Intervention) => {
+    setIntervention(next);
+    setTime(2.45);
+    setPlaying(false);
+    setNotice(`${interventionLabel(next)} is now shown on the intersection`);
   };
 
   return (
-    <main className="motion-review" id="top">
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label="Vector Field home">
-          <span className="brand-mark">VF</span>
-          <span><strong>Vector Field</strong><small>Pair review</small></span>
+    <main className="crossing-app" id="top">
+      <header className="app-header">
+        <a className="wordmark" href="#top" aria-label="Crossing Lab home">
+          <span aria-hidden="true">CL</span>
+          <div>
+            <strong>Crossing Lab</strong>
+            <small>Intersection motion review</small>
+          </div>
         </a>
-        <nav className="scenario-switcher" aria-label="Real-world scenarios">
-          {REAL_SCENARIOS.map((item, index) => (
-            <button
-              type="button"
-              key={item.id}
-              className={scenarioIndex === index ? "active" : ""}
-              aria-pressed={scenarioIndex === index}
-              onClick={() => chooseScenario(index)}
-            >
-              <span>{item.location.split(",")[0]}</span>
-              <small>{item.conflict.encounter}</small>
-            </button>
-          ))}
-        </nav>
-        <div className="top-actions">
-          <span className={`engine-pill ${engineState}`}>
-            <i />{engineState === "connected" ? "API" : engineState === "local" ? "Local parity" : "Offline ready"}
-          </span>
-          <button type="button" className="theme-button" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
-            {theme === "dark" ? "☀" : "☾"}
-          </button>
+        <div className="source-line">
+          <span className="live-dot" aria-hidden="true" />
+          <span>Overhead fixture</span>
+          <i aria-hidden="true" />
+          <span>{OVERHEAD_SOURCE.location}</span>
         </div>
+        <button
+          type="button"
+          className="theme-toggle"
+          onClick={toggleTheme}
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+        >
+          <span aria-hidden="true">{theme === "dark" ? "Light" : "Dark"}</span>
+        </button>
       </header>
 
-      <section className="review-intro">
-        <div>
-          <p>{scenario.code} · {scenario.date}</p>
-          <h1>{scenario.conflict.title}</h1>
-          <span>{scenario.location} · {scenario.context}</span>
-        </div>
-        <div className="review-state">
-          <small>Review state</small>
-          <strong>{conflict.simultaneous ? "Tracks overlap in time" : "Time-separated control"}</strong>
-          <span>{scenario.conflict.note}</span>
-        </div>
+      <section className="hero-copy">
+        <p>One intersection. One potential conflict.</p>
+        <h1>See who arrives first.</h1>
+        <span>
+          Real overhead photography with clearly labeled, authored trajectory
+          fixtures for explaining movement—not an automatic crash detector.
+        </span>
       </section>
 
-      <section className="review-layout">
-        <article className="camera-card" aria-label="Synchronized real-world motion evidence">
-          <header className="card-header">
-            <div><span>01</span><div><strong>Watch the evidence</strong><small>Licensed source footage · reviewed demonstration tracks</small></div></div>
-            <label className="context-toggle">
+      <nav className="stage-nav" aria-label="Review steps">
+        {STAGES.map((item) => (
+          <button
+            type="button"
+            key={item.id}
+            className={stage === item.id ? "active" : ""}
+            aria-current={stage === item.id ? "step" : undefined}
+            onClick={() => setReviewStage(item.id)}
+          >
+            <span>{item.number}</span>
+            <strong>{item.title}</strong>
+            <small>{item.copy}</small>
+          </button>
+        ))}
+      </nav>
+
+      <section className="workspace">
+        <article className="intersection-view" aria-label="Overhead intersection review">
+          <header className="view-toolbar">
+            <div>
+              <span className="eyebrow">Camera 04 · elevated still</span>
+              <strong>Vancouver crossing study</strong>
+            </div>
+            <label className="context-control">
               <input
                 type="checkbox"
-                checked={showContextTracks}
-                onChange={(event) => setShowContextTracks(event.target.checked)}
+                checked={showContext}
+                onChange={(event) => {
+                  setShowContext(event.target.checked);
+                  if (!event.target.checked && selectedActor === "P-04") {
+                    setSelectedActor(PRIMARY_ACTORS[0].id);
+                  }
+                  setNotice(
+                    event.target.checked
+                      ? "Pedestrian context track visible"
+                      : selectedActor === "P-04"
+                        ? "Pedestrian hidden; V-21 is now selected"
+                        : "Showing the primary vehicle pair only",
+                  );
+                }}
               />
-              <span>Other tracks</span>
+              <span>Pedestrian context</span>
             </label>
           </header>
 
-          <div className="video-stage">
-            <video
-              key={scenario.id}
-              ref={videoRef}
-              muted
-              loop
-              playsInline
-              preload="metadata"
-              poster={`${PUBLIC_BASE_PATH}${scenario.poster}`}
-              onLoadedMetadata={(event) => prepareVideo(event.currentTarget)}
-              onCanPlay={() => setVideoState("ready")}
-              onWaiting={() => setVideoState("buffering")}
-              onPlaying={() => {
-                setPlaying(true);
-                setVideoState("ready");
-              }}
-              onPause={() => setPlaying(false)}
-              onTimeUpdate={(event) => setTime(event.currentTarget.currentTime)}
-              onError={() => {
-                setVideoState("error");
-                setNotice("The bundled evidence clip could not be opened");
-              }}
-            >
-              <source src={`${PUBLIC_BASE_PATH}${scenario.mp4}`} type="video/mp4" />
-              <source src={`${PUBLIC_BASE_PATH}${scenario.video}`} type="video/webm" />
-            </video>
-            <div className="video-shade" aria-hidden="true" />
-            {videoState !== "ready" && (
-              <div className={`video-state ${videoState}`} role="status" aria-live="polite">
-                {videoState === "error"
-                  ? "Evidence unavailable"
-                  : videoState === "buffering"
-                    ? "Buffering evidence…"
-                    : "Preparing evidence…"}
-              </div>
-            )}
+          <div className="intersection-canvas">
+            <img
+              src={`${PUBLIC_BASE_PATH}${OVERHEAD_SOURCE.image}`}
+              alt="Elevated night photograph looking down on a Vancouver intersection"
+            />
+            <div className="image-treatment" aria-hidden="true" />
             <svg
-              className="camera-overlay"
-              viewBox="0 0 100 56.25"
-              preserveAspectRatio="none"
-              aria-label="Frame-aligned reviewed track boxes"
+              className="track-layer"
+              viewBox="0 0 1000 667"
+              role="img"
+              aria-label="Authored vehicle and pedestrian trajectories over the real intersection photograph"
             >
-              {activeActors.map((actor) => (
-                <g
-                  key={actor.id}
-                  className={`camera-detection ${actor.color} ${selectedActor === actor.id ? "selected" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Select curated reviewed track ${actor.id}, ${actor.label}`}
-                  onClick={() => selectEvidenceActor(actor.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      selectEvidenceActor(actor.id);
-                    }
-                  }}
+              <defs>
+                <filter id="track-shadow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.55" />
+                </filter>
+                <marker
+                  id="velocity-arrow"
+                  markerWidth="8"
+                  markerHeight="8"
+                  refX="7"
+                  refY="4"
+                  orient="auto"
                 >
-                  <rect x={actor.x} y={actor.y} width={actor.w} height={actor.h} vectorEffect="non-scaling-stroke" />
-                  <text x={actor.x} y={Math.max(2, actor.y - 0.8)}>{actor.id}</text>
-                </g>
-              ))}
+                  <path d="M0,0 L8,4 L0,8 Z" />
+                </marker>
+              </defs>
+
+              <g className={`conflict-marker ${estimate.band}`}>
+                <circle cx={CONFLICT_POINT.x} cy={CONFLICT_POINT.y} r="45" />
+                <circle cx={CONFLICT_POINT.x} cy={CONFLICT_POINT.y} r="7" />
+                <text x={CONFLICT_POINT.x + 57} y={CONFLICT_POINT.y - 7}>
+                  CONFLICT POINT
+                </text>
+                <text x={CONFLICT_POINT.x + 57} y={CONFLICT_POINT.y + 16}>
+                  arrival gap {estimate.arrivalGap.toFixed(2)} s
+                </text>
+              </g>
+
+              {actors.map((actor) => {
+                const state = actorState(actor, time, intervention);
+                const vectorLength =
+                  actor.kind === "pedestrian"
+                    ? 34
+                    : Math.max(44, state.velocityMs * 7);
+                const isSelected = selectedActor === actor.id;
+                return (
+                  <g
+                    key={actor.id}
+                    className={`actor-track ${actor.color} ${isSelected ? "selected" : ""}`}
+                  >
+                    <polyline
+                      className="observed-track"
+                      points={observedPoints(actor, intervention)}
+                    />
+                    <polyline
+                      className="forecast-track"
+                      points={forecastPoints(actor, time, intervention)}
+                    />
+                    <line
+                      className="velocity-vector"
+                      x1={state.x}
+                      y1={state.y}
+                      x2={state.x + state.direction.x * vectorLength}
+                      y2={state.y + state.direction.y * vectorLength}
+                      markerEnd="url(#velocity-arrow)"
+                    />
+                    <g
+                      className="actor-hit"
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={isSelected}
+                      aria-label={`Select ${actor.label}, ${velocityLabel(state.velocityMs)}`}
+                      onClick={() => {
+                        setSelectedActor(actor.id);
+                        setNotice(`${actor.id} selected for the detail readout`);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedActor(actor.id);
+                          setNotice(`${actor.id} selected for the detail readout`);
+                        }
+                      }}
+                      transform={`translate(${state.x} ${state.y}) rotate(${state.headingDeg})`}
+                    >
+                      {actor.kind === "vehicle" ? (
+                        <rect x="-20" y="-10" width="40" height="20" rx="6" />
+                      ) : (
+                        <circle r="9" />
+                      )}
+                      <text
+                        className="actor-label"
+                        x="0"
+                        y="-19"
+                        transform={`rotate(${-state.headingDeg})`}
+                      >
+                        {actor.id}
+                      </text>
+                    </g>
+                  </g>
+                );
+              })}
             </svg>
-            <div className="source-badge">REAL FOOTAGE · {scenario.license}</div>
-            <div className="transport">
-              <button type="button" onClick={togglePlayback} aria-label={playing ? "Pause evidence clip" : "Play evidence clip"}>
-                {playing ? "Ⅱ" : "▶"}
+
+            <div className="media-badges">
+              <span>REAL PHOTOGRAPH · {OVERHEAD_SOURCE.license}</span>
+              <span>AUTHORED TRACK FIXTURE · NOT DETECTION</span>
+            </div>
+
+            <div className="timeline">
+              <button
+                type="button"
+                className="play-button"
+                onClick={() => {
+                  setPlaying((current) => !current);
+                  setNotice(playing ? "Fixture paused" : "Fixture playing");
+                }}
+                aria-label={playing ? "Pause trajectory fixture" : "Play trajectory fixture"}
+              >
+                {playing ? "Pause" : "Play"}
               </button>
-              <span>{formatScenarioTime(time)}</span>
+              <span>{formatTime(time)}</span>
               <input
-                aria-label="Evidence time"
                 type="range"
                 min="0"
-                max={scenario.duration}
+                max={FIXTURE_DURATION_S}
                 step="0.01"
-                value={Math.min(time, scenario.duration)}
-                onChange={(event) => seek(Number(event.target.value))}
+                value={time}
+                aria-label="Fixture time"
+                onChange={(event) => {
+                  setPlaying(false);
+                  setTime(Number(event.target.value));
+                  setNotice("Fixture positioned with the timeline");
+                }}
               />
-              <span>{formatScenarioTime(scenario.duration)}</span>
-              <button type="button" onClick={cycleSpeed} aria-label="Change playback speed">{speed}×</button>
+              <span>{formatTime(FIXTURE_DURATION_S)}</span>
+              <button type="button" className="restart-button" onClick={restart}>
+                Restart
+              </button>
             </div>
           </div>
 
-          <footer className="camera-footer">
-            <span role="status" aria-live="polite">{notice}</span>
-            <a href={scenario.sourceUrl} target="_blank" rel="noreferrer">
-              {scenario.creator} · source ↗
+          <footer className="view-footer">
+            <span role="status" aria-live="polite">
+              {notice}
+            </span>
+            <a href={OVERHEAD_SOURCE.sourceUrl} target="_blank" rel="noreferrer">
+              {OVERHEAD_SOURCE.creator} · source ↗
             </a>
           </footer>
         </article>
 
-        <article className="conflict-card" aria-label="Evidence-derived image-plane relationship">
-          <header className="card-header">
-            <div><span>02</span><div><strong>Read the relationship</strong><small>Image-plane traces from the curated reviewed pair</small></div></div>
-            <span className={`overlap-badge ${conflict.simultaneous ? "review" : "clear"}`}>
-              {conflict.simultaneous ? "Simultaneous" : "Separated"}
-            </span>
-          </header>
-
-          <div className="conflict-map">
-            <svg viewBox="0 0 100 60" role="img" aria-label={`${scenario.conflict.title} image-plane track relationship`}>
-              <defs>
-                <marker id="arrow-a" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                  <path d="M0,0 L6,3 L0,6 Z" className="arrow-a" />
-                </marker>
-                <marker id="arrow-b" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                  <path d="M0,0 L6,3 L0,6 Z" className="arrow-b" />
-                </marker>
-              </defs>
-              <rect width="100" height="60" className="map-surface" />
-              <circle cx={conflict.zone.x} cy={conflict.zone.y} r="7" className="conflict-zone" />
-              <circle cx={conflict.zone.x} cy={conflict.zone.y} r="1.7" className="conflict-core" />
-              {pairActors.map((actor, index) => (
-                <g key={actor.id} className={`map-track track-${index}`}>
-                  <polyline
-                    points={observedPath(actor)}
-                    markerEnd={`url(#arrow-${index === 0 ? "a" : "b"})`}
-                  />
-                  {actor.keyframes.map((frame) => (
-                    <circle
-                      key={`${actor.id}-${frame.t}`}
-                      cx={frame.x + frame.w / 2}
-                      cy={frame.y + frame.h}
-                      r="0.9"
-                    />
-                  ))}
-                  {pairPositions[index] && (
-                    <circle
-                      className="current-position"
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Select curated reviewed track ${actor.id}, ${actor.label}`}
-                      cx={pairPositions[index]!.x}
-                      cy={pairPositions[index]!.y}
-                      r={selectedActor === actor.id ? 3 : 2.3}
-                      onClick={() => selectEvidenceActor(actor.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          selectEvidenceActor(actor.id);
-                        }
+        <aside className="analysis-panel" aria-label={`${stage} review panel`}>
+          {stage === "watch" && (
+            <section className="panel-section watch-panel">
+              <header>
+                <span className="step-kicker">01 · Watch</span>
+                <h2>Three road users, one shared frame.</h2>
+                <p>
+                  Solid lines are reviewed history. Dotted lines are constant-motion
+                  fixture forecasts. Arrows show heading and speed.
+                </p>
+              </header>
+              <div className="actor-list">
+                {actors.map((actor) => {
+                  const state = actorState(actor, time, intervention);
+                  return (
+                    <button
+                      type="button"
+                      key={actor.id}
+                      className={selectedActor === actor.id ? "active" : ""}
+                      aria-pressed={selectedActor === actor.id}
+                      onClick={() => {
+                        setSelectedActor(actor.id);
+                        setNotice(`${actor.id} selected for the detail readout`);
                       }}
-                    />
-                  )}
-                </g>
-              ))}
-            </svg>
-            <div className="map-caption">
-              <strong>Evidence-derived image plane</strong>
-              <span>Relative camera traces only · no road geometry or physical distance</span>
-            </div>
-          </div>
+                    >
+                      <i className={actor.color} />
+                      <span>
+                        <strong>{actor.id} · {actor.label}</strong>
+                        <small>
+                          {velocityLabel(state.velocityMs)} · heading{" "}
+                          {Math.round(state.headingDeg)}°
+                        </small>
+                      </span>
+                      <em>{Math.round(actor.confidence * 100)}%</em>
+                    </button>
+                  );
+                })}
+              </div>
+              <dl className="selected-readout">
+                <div>
+                  <dt>Selected track</dt>
+                  <dd>{selected.id}</dd>
+                </div>
+                <div>
+                  <dt>Estimated velocity</dt>
+                  <dd>{velocityLabel(selectedState.velocityMs)}</dd>
+                </div>
+                <div>
+                  <dt>Heading</dt>
+                  <dd>{Math.round(selectedState.headingDeg)}° image-plane</dd>
+                </div>
+              </dl>
+              <p className="method-note">
+                Track confidence and kinematics belong to the authored demonstration
+                fixture. They were not inferred from this single photograph.
+              </p>
+            </section>
+          )}
 
-          <div className="pair-list" aria-label="Curated reviewed pair">
-            {pairActors.map((actor, index) => (
+          {stage === "conflict" && (
+            <section className="panel-section conflict-panel">
+              <header>
+                <span className="step-kicker">02 · Conflict</span>
+                <h2>
+                  The paths meet {estimate.arrivalGap.toFixed(2)} seconds apart.
+                </h2>
+                <p>
+                  Time-to-conflict is the remaining fixture time for each path to
+                  reach the same image-plane point.
+                </p>
+              </header>
+              <div
+                className={`likelihood-block ${estimate.band}`}
+                style={{ "--risk": `${estimate.likelihood * 3.6}deg` } as React.CSSProperties}
+              >
+                <div className="risk-ring">
+                  <span>{estimate.likelihood}%</span>
+                  <small>±{estimate.uncertainty} pts</small>
+                </div>
+                <div>
+                  <span>Illustrative collision likelihood</span>
+                  <strong>{estimate.band}</strong>
+                  <small>
+                    plausible fixture range {estimate.range[0]}–{estimate.range[1]}%
+                  </small>
+                </div>
+              </div>
+              <div className="arrival-table">
+                {PRIMARY_ACTORS.map((actor, index) => {
+                  const state = actorState(actor, time, intervention);
+                  const ttc = index === 0 ? estimate.actorATtc : estimate.actorBTtc;
+                  const arrival =
+                    index === 0 ? estimate.actorAArrival : estimate.actorBArrival;
+                  return (
+                    <div key={actor.id}>
+                      <i className={actor.color} />
+                      <span>
+                        <strong>{actor.id}</strong>
+                        <small>{velocityLabel(state.velocityMs)}</small>
+                      </span>
+                      <span>
+                        <small>Time to conflict</small>
+                        <strong>{formatTime(ttc)}</strong>
+                      </span>
+                      <span>
+                        <small>Fixture arrival</small>
+                        <strong>{formatTime(arrival)}</strong>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="plain-language">
+                <span>What this means</span>
+                <p>{estimate.summary}</p>
+              </div>
+              <p className="method-note">
+                This percentage is an illustrative scenario score with an authored
+                uncertainty band—not a calibrated estimate of a real crash. TTC uses
+                the fixture paths and constant-motion assumption, not physical
+                photogrammetry.
+              </p>
               <button
                 type="button"
-                key={actor.id}
-                className={selectedActor === actor.id ? "active" : ""}
+                className="primary-action"
+                onClick={() => setReviewStage("test")}
+              >
+                Test a safer timing
+                <span aria-hidden="true">→</span>
+              </button>
+            </section>
+          )}
+
+          {stage === "test" && (
+            <section className="panel-section test-panel">
+              <header>
+                <span className="step-kicker">03 · Test</span>
+                <h2>Change one control.</h2>
+                <p>
+                  The photo and through vehicle stay fixed. Only the turning
+                  vehicle&apos;s authored arrival timing changes.
+                </p>
+              </header>
+              <div className="intervention-list" role="group" aria-label="Timing intervention">
+                {(
+                  [
+                    {
+                      id: "recorded",
+                      title: "Observed flow",
+                      copy: "No control applied",
+                    },
+                    {
+                      id: "early-brake",
+                      title: "Early brake",
+                      copy: "Turn vehicle slows before entry",
+                    },
+                    {
+                      id: "protected-turn",
+                      title: "Protected turn",
+                      copy: "Turn waits for a separate phase",
+                    },
+                  ] as const
+                ).map((item) => (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={intervention === item.id ? "active" : ""}
+                    aria-pressed={intervention === item.id}
+                    onClick={() => applyIntervention(item.id)}
+                  >
+                    <i />
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>{item.copy}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="comparison">
+                <div>
+                  <span>Observed</span>
+                  <strong>42% <small>±9</small></strong>
+                  <em>0.23 s gap</em>
+                </div>
+                <span aria-hidden="true">→</span>
+                <div className={estimate.band}>
+                  <span>{interventionLabel(intervention)}</span>
+                  <strong>
+                    {estimate.likelihood}% <small>±{estimate.uncertainty}</small>
+                  </strong>
+                  <em>{estimate.arrivalGap.toFixed(2)} s gap</em>
+                </div>
+              </div>
+              <div className="plain-language">
+                <span>Result</span>
+                <p>{estimate.summary}</p>
+              </div>
+              <button
+                type="button"
+                className="primary-action"
                 onClick={() => {
-                  selectEvidenceActor(actor.id);
-                  const [start, end] = scenario.conflict.reviewWindow;
-                  if (time < start || time > end) seek((start + end) / 2);
+                  setTime(0);
+                  setPlaying(true);
+                  setNotice(`${interventionLabel(intervention)} replay started`);
                 }}
               >
-                <i className={`pair-color pair-${index}`} />
-                <span><strong>{index === 0 ? "A" : "B"} · {actor.label}</strong><small>{actor.id} · visible {trackWindow(actor)}</small></span>
-                <em>{selectedActor === actor.id ? "FOCAL" : "VIEW"}</em>
+                Replay this timing
+                <span aria-hidden="true">↻</span>
               </button>
-            ))}
-          </div>
-
-          <dl className="relationship-facts">
-            <div>
-              <dt>{conflict.simultaneous ? "Closest reviewed moment" : "Annotation timing"}</dt>
-              <dd>
-                {conflict.simultaneous
-                  ? `Observed at ${formatScenarioTime(conflict.closestTime ?? 0)}`
-                  : "Track windows do not overlap"}
-              </dd>
-            </div>
-            <div><dt>Selected evidence</dt><dd>{selectedTrack.id} · curated demonstration track</dd></div>
-            <div><dt>Review condition</dt><dd>{interventionLabel(obstruction)}</dd></div>
-          </dl>
-        </article>
+              <p className="method-note">
+                Compare directionally. The score is deterministic, illustrative,
+                and not validated for roadway decision-making.
+              </p>
+            </section>
+          )}
+        </aside>
       </section>
 
-      <section className="decision-strip">
-        <div className="decision-copy">
-          <span>03</span>
-          <div>
-            <small>Fixture outcome for {selectedTrack.id}</small>
-            <strong>{riskLabel}</strong>
-            <p>Authored deterministic fixture · qualitative band · research UI only</p>
-          </div>
+      <footer className="research-boundary">
+        <div>
+          <strong>Research boundary</strong>
+          <span>
+            Real CC0 photograph · authored trajectories · no perception model · no
+            planning or actuation
+          </span>
         </div>
-        <div className="mode-summary" aria-label="Fixture future modes">
-          {orderedModes.map((mode, index) => (
-            <div key={mode.label}>
-              <span>{index === 0 ? "Primary" : "Alternate"}</span>
-              <strong>{mode.label}</strong>
-            </div>
-          ))}
-        </div>
-        <button type="button" className="test-button" onClick={openCounterfactual}>
-          <span>Test visibility assumption</span>
-          <small>Hold clip and track constant →</small>
-        </button>
-      </section>
-
-      {counterfactualOpen && (
-        <div className="counterfactual-scrim" role="presentation" onMouseDown={() => setCounterfactualOpen(false)}>
-          <section
-            ref={dialogRef}
-            className="counterfactual-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="counterfactual-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <header>
-              <div><span>Controlled comparison</span><h2 id="counterfactual-title">Change visibility, not the evidence</h2></div>
-              <button ref={closeButtonRef} type="button" onClick={() => setCounterfactualOpen(false)} aria-label="Close comparison">×</button>
-            </header>
-            <p>The real clip and reviewed track remain unchanged. Only the deterministic fixture&apos;s visibility context changes for <strong>{selectedTrack.id}</strong>.</p>
-            <div className="intervention-options">
-              {([
-                ["present", "Recorded", "Use the reviewed context"],
-                ["shifted", "Improved", "Increase fixture visibility"],
-                ["removed", "Unobstructed", "Test the maximum-visibility fixture"],
-              ] as const).map(([value, label, detail]) => (
-                <button
-                  type="button"
-                  key={value}
-                  className={draftObstruction === value ? "active" : ""}
-                  aria-pressed={draftObstruction === value}
-                  onClick={() => setDraftObstruction(value)}
-                >
-                  <i /><span><strong>{label}</strong><small>{detail}</small></span>
-                </button>
-              ))}
-            </div>
-            <div className="counterfactual-summary">
-              <span>Recorded <strong>{fixtureBand(draftEvidenceResult.baseline_risk)}</strong></span>
-              <i>→</i>
-              <span>Comparison <strong>{fixtureBand(draftEvidenceResult.counterfactual_risk)}</strong></span>
-            </div>
-            <button type="button" className="run-intervention" onClick={runCounterfactual} disabled={counterfactualRunning}>
-              {counterfactualRunning ? "Running deterministic comparison…" : "Apply comparison"}
-            </button>
-          </section>
-        </div>
-      )}
+        <a
+          href="https://highways.dot.gov/turner-fairbank-highway-research-center/software/ssam"
+          target="_blank"
+          rel="noreferrer"
+        >
+          FHWA surrogate-safety context ↗
+        </a>
+      </footer>
     </main>
   );
 }

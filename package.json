@@ -1,7 +1,7 @@
 {
-  "name": "autonomous-motion-forecasting-lab",
+  "name": "crossinglab",
   "version": "0.1.0",
-  "description": "Real-footage pair review with synchronized curated tracks, an evidence-derived image-plane relationship, deterministic motion fixtures, and controlled comparisons.",
+  "description": "Overhead intersection motion review with real photography, authored trajectories, TTC, uncertainty, and controlled timing comparisons.",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -12,8 +12,9 @@
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test:ui": "vitest run --config vitest.config.ts",
     "test:api": "backend/.venv/bin/python -m pytest backend/tests",
-    "verify": "npm run build && npm run typecheck && npm test && npm run lint && npm run test:api",
+    "verify": "npm run build && npm run typecheck && npm test && npm run test:ui && npm run lint && npm run test:api",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "typecheck": "tsc --noEmit"
   },
@@ -26,6 +27,9 @@
     "@cloudflare/vite-plugin": "^1.47.0",
     "@eslint/js": "^9.39.5",
     "@tailwindcss/postcss": "4.2.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
@@ -33,12 +37,14 @@
     "@vitejs/plugin-rsc": "0.5.26",
     "eslint": "^10.8.0",
     "globals": "^16.4.0",
+    "jsdom": "^27.4.0",
     "react-server-dom-webpack": "^19.2.8",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.59.3",
     "vinext": "0.0.50",
     "vite": "^8.1.5",
+    "vitest": "^4.1.10",
     "wrangler": "^4.114.0"
   },
   "overrides": {
