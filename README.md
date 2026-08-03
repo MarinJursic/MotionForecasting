@@ -1,13 +1,13 @@
-# Crossing Lab
+# Motion Forecasting
 
-[![Live preview](https://img.shields.io/badge/live-preview-e96832?logo=github)](https://marinjursic.github.io/CrossingLab/)
-[![Preview status](https://github.com/MarinJursic/CrossingLab/actions/workflows/pages.yml/badge.svg)](https://github.com/MarinJursic/CrossingLab/actions/workflows/pages.yml)
+[![Live preview](https://img.shields.io/badge/live-preview-e96832?logo=github)](https://marinjursic.github.io/MotionForecasting/)
+[![Preview status](https://github.com/MarinJursic/MotionForecasting/actions/workflows/pages.yml/badge.svg)](https://github.com/MarinJursic/MotionForecasting/actions/workflows/pages.yml)
 [![Next.js](https://img.shields.io/badge/Next.js-16-111714?logo=nextdotjs)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Tests](https://img.shields.io/badge/tests-39%20passing-176BCA)](#verification)
 
-Crossing Lab explains one potential intersection conflict from an elevated
+Motion Forecasting explains one potential intersection conflict from an elevated
 view. A real CC0 photograph remains the visual source of truth while a compact,
 authored motion fixture makes direction, speed, predicted path, pairwise
 conflict timing, TTC, uncertainty, and simple timing interventions easy to read.
@@ -71,7 +71,7 @@ motion-forecasting sources:
   x/y velocity, and explicitly distinguishes focal, scored, and contextual
   tracks.
 - [Waymo Occupancy Flow Fields](https://waymo.com/research/occupancy-flow-fields-for-motion-forecasting-in-autonomous-driving/)
-  combines occupancy with motion direction; Crossing Lab similarly keeps
+  combines occupancy with motion direction; Motion Forecasting similarly keeps
   direction visible instead of presenting a risk heatmap alone.
 - [NHTSA’s intersection collision-avoidance research](https://www.nhtsa.gov/crash-avoidance/office-crash-avoidance-research-technical-publications)
   uses controlled test procedures for crossing-path scenarios. Because this

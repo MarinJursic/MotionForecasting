@@ -4,7 +4,7 @@ import "./globals.css";
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 export const metadata: Metadata = {
-  title: "Crossing Lab — Intersection Motion Review",
+  title: "Motion Forecasting — Intersection Risk Analysis",
   description:
     "Understand an overhead intersection conflict through tracked motion, time-to-conflict, uncertainty, and controlled timing comparisons.",
   icons: { icon: `${basePath}/favicon.svg`, shortcut: `${basePath}/favicon.svg` },

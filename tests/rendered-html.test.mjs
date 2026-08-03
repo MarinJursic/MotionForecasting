@@ -45,14 +45,14 @@ async function render() {
   );
 }
 
-test("server-renders the Crossing Lab review shell", async () => {
+test("server-renders the Motion Forecasting review shell", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(
     html,
-    /<title>Crossing Lab — Intersection Motion Review<\/title>/,
+    /<title>Motion Forecasting — Intersection Risk Analysis<\/title>/,
   );
   assert.match(html, /See who arrives first/);
   assert.match(html, /Watch/);

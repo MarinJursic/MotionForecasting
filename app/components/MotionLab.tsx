@@ -157,10 +157,10 @@ export function MotionLab() {
   return (
     <main className="crossing-app" id="top">
       <header className="app-header">
-        <a className="wordmark" href="#top" aria-label="Crossing Lab home">
+        <a className="wordmark" href="#top" aria-label="Motion Forecasting home">
           <span aria-hidden="true">CL</span>
           <div>
-            <strong>Crossing Lab</strong>
+            <strong>Motion Forecasting</strong>
             <small>Intersection motion review</small>
           </div>
         </a>

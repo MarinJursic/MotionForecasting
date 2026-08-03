@@ -7,7 +7,7 @@ async function openTestStep() {
   await userEvent.click(screen.getByRole("button", { name: /^03Test/ }));
 }
 
-describe("Crossing Lab controls", () => {
+describe("Motion Forecasting controls", () => {
   it("navigates all stages and restores observed flow outside Test", async () => {
     render(<MotionLab />);
 
